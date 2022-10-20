@@ -197,9 +197,10 @@ class OverClause final {
 
 class TruncateClause {
  public:
-  TruncateClause(Expression *expr, bool isSample) {
+  TruncateClause(Expression *expr, bool isSample, bool flatSample = false) {
     truncate_ = expr;
     isSample_ = isSample;
+    flatSample_ = flatSample;
   }
 
   Expression *truncate() const {
@@ -213,11 +214,13 @@ class TruncateClause {
   bool isSample() const {
     return isSample_;
   }
+  bool flatSample() const { return flatSample_; }
 
   std::string toString() const;
 
  private:
   bool isSample_{false};
+  bool flatSample_{false};
   Expression *truncate_{nullptr};
 };
 
