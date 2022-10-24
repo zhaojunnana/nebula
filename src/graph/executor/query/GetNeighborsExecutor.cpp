@@ -17,7 +17,14 @@ DataSet GetNeighborsExecutor::buildRequestDataSet() {
   SCOPED_TIMER(&execTime_);
   auto inputVar = gn_->inputVar();
   auto iter = ectx_->getResult(inputVar).iter();
-  return buildRequestDataSetByVidType(iter.get(), gn_->src(), gn_->dedup());
+  DataSet reqDs;
+  if(gn_->isPush()){
+    const Value& val = ectx_->getResult(inputVar).value();
+    reqDs = buildValRequestDataSetByVidType(iter.get(), gn_->src(), const_cast<Value &>(val));
+  } else {
+    reqDs = buildRequestDataSetByVidType(iter.get(), gn_->src(), gn_->dedup());
+  }
+  return reqDs;
 }
 
 folly::Future<Status> GetNeighborsExecutor::execute() {

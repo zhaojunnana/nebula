@@ -204,6 +204,10 @@ class GetNeighbors : public Explore {
     return random_;
   }
 
+  bool isPush() const {
+    return isPush_;
+  }
+
   void setSrc(Expression* src) {
     src_ = src;
   }
@@ -236,6 +240,10 @@ class GetNeighbors : public Explore {
     random_ = random;
   }
 
+  void setIsPush(bool push = false) {
+    isPush_ = push;
+  }
+
   PlanNode* clone() const override;
   std::unique_ptr<PlanNodeDescription> explain() const override;
 
@@ -257,6 +265,7 @@ class GetNeighbors : public Explore {
   std::unique_ptr<std::vector<StatProp>> statProps_;
   std::unique_ptr<std::vector<Expr>> exprs_;
   bool random_{false};
+  bool isPush_{false};
 };
 
 // Get property with given vertex keys.
@@ -1057,6 +1066,9 @@ class Sample final : public SingleInputNode {
     count_ = DCHECK_NOTNULL(count);
   }
 
+  void setFlatSample(bool flatSample) { flat_sample = flatSample; }
+  bool flatSample() { return flat_sample; }
+
   PlanNode* clone() const override;
   std::unique_ptr<PlanNodeDescription> explain() const override;
 
@@ -1073,6 +1085,7 @@ class Sample final : public SingleInputNode {
 
  private:
   Expression* count_{nullptr};
+  bool flat_sample{false};
 };
 
 // Do Aggregation with the given set of records,

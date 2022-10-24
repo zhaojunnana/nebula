@@ -77,6 +77,7 @@ void GetNeighbors::cloneMembers(const GetNeighbors& g) {
   setEdgeTypes(g.edgeTypes_);
   setEdgeDirection(g.edgeDirection_);
   setRandom(g.random_);
+  setIsPush(g.isPush_);
   if (g.vertexProps_) {
     auto vertexProps = *g.vertexProps_;
     auto vertexPropsPtr = std::make_unique<decltype(vertexProps)>(vertexProps);
@@ -484,6 +485,7 @@ void Sample::cloneMembers(const Sample& l) {
   SingleInputNode::cloneMembers(l);
 
   count_ = l.count_->clone();
+  flat_sample = l.flat_sample;
 }
 
 std::unique_ptr<PlanNodeDescription> Aggregate::explain() const {
