@@ -49,6 +49,7 @@ class PlanNode {
     kIntersect,
     kMinus,
     kProject,
+    kProcedure,
     kUnwind,
     kSort,
     kTopN,

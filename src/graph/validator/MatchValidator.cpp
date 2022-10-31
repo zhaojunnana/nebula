@@ -5,10 +5,15 @@
 
 #include "graph/validator/MatchValidator.h"
 
+#include "common/expression/FunctionCallExpression.h"
+#include "common/expression/LabelExpression.h"
+#include "graph/context/ast/CypherAstContext.h"
 #include "graph/planner/match/MatchSolver.h"
 #include "graph/util/ExpressionUtils.h"
 #include "graph/visitor/ExtractGroupSuiteVisitor.h"
 #include "graph/visitor/RewriteVisitor.h"
+#include "parser/Clauses.h"
+#include "parser/MatchSentence.h"
 
 namespace nebula {
 namespace graph {
@@ -25,6 +30,10 @@ Status MatchValidator::validateImpl() {
   auto *sentence = static_cast<MatchSentence *>(sentence_);
   auto &clauses = sentence->clauses();
 
+  if (sentence->ret() == nullptr && !clauses.back()->isCall()) {
+    return Status::SemanticError("Only call clause can be without return clause");
+  }
+
   std::unordered_map<std::string, AliasType> aliasesAvailable;
   auto retClauseCtx = getContext<ReturnClauseContext>();
   auto retYieldCtx = getContext<YieldClauseContext>();
@@ -34,6 +43,57 @@ Status MatchValidator::validateImpl() {
   for (auto &clause : clauses) {
     auto kind = clause->kind();
     switch (kind) {
+      case nebula::ReadingClause::Kind::kCall: {
+        auto *callClause = static_cast<CallClause *>(clause.get());
+
+        auto callClauseCtx = getContext<CallClauseContext>();
+        auto rewriteExpr = MatchSolver::doRewrite(callClauseCtx->qctx,
+         aliasesAvailable, callClause->functionCall());
+        auto normalFuncExpr =
+         static_cast<FunctionCallExpression *>(rewriteExpr);
+        callClauseCtx->callFuncExpr = FunctionCallApocExpression::make(
+          callClauseCtx->qctx->objPool(), normalFuncExpr->name(), normalFuncExpr->args());
+
+        auto callYieldCtx = getContext<YieldClauseContext>();
+        callClauseCtx->yield = std::move(callYieldCtx);
+
+        callClauseCtx->yield->yieldColumns = callClause->yieldColumns();
+        callClauseCtx->yield->aliasesAvailable = aliasesAvailable;
+
+        // todo check & expand
+        std::vector<const Expression *> exprs;
+        exprs.reserve(callClauseCtx->yield->yieldColumns->size());
+        for (auto *col : callClauseCtx->yield->yieldColumns->columns()) {
+          auto aliasType = AliasType::kDefault;
+          if (col->alias().empty()) {
+            if (col->expr()->kind() == Expression::Kind::kLabel) {
+              col->setAlias(col->toString());
+            } else {
+              return Status::SemanticError("Expression in CALL-YIELD must be aliased (use AS)");
+            }
+          }
+          if (!callClauseCtx->aliasesGenerated.emplace(col->alias(), aliasType).second) {
+            return Status::SemanticError("`%s': Redefined alias", col->alias().c_str());
+          }
+
+
+          if (!callClauseCtx->yield->hasAgg_ &&
+              ExpressionUtils::hasAny(col->expr(), {Expression::Kind::kAggregate})) {
+            callClauseCtx->yield->hasAgg_ = true;
+          }
+          exprs.push_back(col->expr());
+        }
+
+        // NG_RETURN_IF_ERROR(validateAliases(exprs, callClauseCtx->yield->aliasesAvailable));
+        NG_RETURN_IF_ERROR(validateYield(*callClauseCtx->yield));
+
+        aliasesAvailable = callClauseCtx->aliasesGenerated;
+        cypherCtx_->queryParts.back().boundary = std::move(callClauseCtx);
+        cypherCtx_->queryParts.emplace_back();
+        cypherCtx_->queryParts.back().aliasesAvailable = aliasesAvailable;
+
+        break;
+      }
       case ReadingClause::Kind::kMatch: {
         auto *matchClause = static_cast<MatchClause *>(clause.get());
 
@@ -103,8 +163,44 @@ Status MatchValidator::validateImpl() {
     }
   }
 
-  retClauseCtx->yield->aliasesAvailable = aliasesAvailable;
-  NG_RETURN_IF_ERROR(validateReturn(sentence->ret(), cypherCtx_->queryParts, *retClauseCtx));
+  if (sentence->ret() != nullptr) {
+    retClauseCtx->yield->aliasesAvailable = aliasesAvailable;
+    NG_RETURN_IF_ERROR(validateReturn(sentence->ret(), cypherCtx_->queryParts, *retClauseCtx));
+  } else if (cypherCtx_->queryParts.size() > 1
+   && (*(cypherCtx_->queryParts.end() - 2)).boundary->kind == CypherClauseKind::kCall) {
+    // no return & last part is call, make fake return to build ctx
+    auto lastCallClauseCtx =
+     static_cast<CallClauseContext *>((*(cypherCtx_->queryParts.end() - 2)).boundary.get());
+    auto procedureReturnCols = lastCallClauseCtx->callFuncExpr->getProcedureReturnCols();
+    if (procedureReturnCols.ok()) {
+      YieldColumns *autoYieldColumns = cypherCtx_->qctx->objPool()->makeAndAdd<YieldColumns>();
+      for (const auto &returnCol : procedureReturnCols.value()) {
+        auto yieldCol = cypherCtx_->qctx->objPool()->makeAndAdd<YieldColumn>(
+          LabelExpression::make(cypherCtx_->qctx->objPool(), returnCol));
+        yieldCol->setAlias(returnCol);
+        autoYieldColumns->addColumn(yieldCol);
+        if (!lastCallClauseCtx->aliasesGenerated.emplace(returnCol, AliasType::kDefault).second) {
+          return Status::SemanticError("`%s': Redefined alias", returnCol.c_str());
+        }
+      }
+
+      lastCallClauseCtx->yield->yieldColumns = autoYieldColumns;
+      NG_RETURN_IF_ERROR(validateYield(*lastCallClauseCtx->yield));
+
+      retClauseCtx->yield->aliasesAvailable = lastCallClauseCtx->aliasesGenerated;
+      MatchReturnItems *callAutoReturnItems =
+       cypherCtx_->qctx->objPool()->makeAndAdd<MatchReturnItems>(false, autoYieldColumns);
+      MatchReturn *callAutoReturn =
+       cypherCtx_->qctx->objPool()->makeAndAdd<MatchReturn>(callAutoReturnItems);
+      NG_RETURN_IF_ERROR(validateReturn(
+        callAutoReturn, cypherCtx_->queryParts, *retClauseCtx));
+    } else {
+      return Status::SemanticError("Auto compelete apoc procedure return cols failed for func: "
+       + lastCallClauseCtx->callFuncExpr->name());
+    }
+  } else {
+    return Status::SemanticError("return clause is missing.");
+  }
 
   NG_RETURN_IF_ERROR(buildOutputs(retClauseCtx->yield->yieldColumns));
   cypherCtx_->queryParts.back().boundary = std::move(retClauseCtx);

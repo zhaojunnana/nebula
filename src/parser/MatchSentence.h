@@ -7,7 +7,9 @@
 #define PARSER_MATCHSENTENCE_H_
 
 #include "common/expression/ContainerExpression.h"
+#include "common/expression/FunctionCallExpression.h"
 #include "common/expression/SubscriptExpression.h"
+#include "parser/Clauses.h"
 #include "parser/MatchPath.h"
 #include "parser/Sentence.h"
 #include "parser/TraverseSentences.h"
@@ -113,6 +115,7 @@ class MatchReturn final {
 class ReadingClause {
  public:
   enum class Kind : uint8_t {
+    kCall,
     kMatch,
     kUnwind,
     kWith,
@@ -124,6 +127,10 @@ class ReadingClause {
 
   auto kind() const {
     return kind_;
+  }
+
+  bool isCall() const {
+    return kind() == Kind::kCall;
   }
 
   bool isMatch() const {
@@ -142,6 +149,29 @@ class ReadingClause {
 
  private:
   Kind kind_;
+};
+
+class CallClause final : public ReadingClause {
+ public:
+  CallClause(Expression* functionCall, YieldColumns* yieldColumns)
+      : ReadingClause(Kind::kCall) {
+    functionCall_ = functionCall;
+    yieldColumns_.reset(yieldColumns);
+  }
+
+  Expression* functionCall() {
+    return functionCall_;
+  }
+
+  YieldColumns* yieldColumns() {
+    return yieldColumns_.get();
+  }
+
+  std::string toString() const override;
+
+ private:
+  Expression* functionCall_{nullptr};
+  std::unique_ptr<YieldColumns> yieldColumns_;
 };
 
 class MatchClause final : public ReadingClause {

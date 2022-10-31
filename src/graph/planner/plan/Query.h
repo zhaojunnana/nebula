@@ -832,6 +832,32 @@ class Project final : public SingleInputNode {
   YieldColumns* cols_{nullptr};
 };
 
+// Procedure is used to process call apoc procedure.
+class Procedure final : public SingleInputNode {
+ public:
+  static Procedure* make(QueryContext* qctx, PlanNode* input, YieldColumns* cols = nullptr) {
+    return qctx->objPool()->makeAndAdd<Procedure>(qctx, input, cols);
+  }
+
+  const YieldColumns* columns() const {
+    return cols_;
+  }
+
+  PlanNode* clone() const override;
+  std::unique_ptr<PlanNodeDescription> explain() const override;
+
+  void accept(PlanNodeVisitor* visitor) override;
+
+ private:
+  friend ObjectPool;
+  Procedure(QueryContext* qctx, PlanNode* input, YieldColumns* cols);
+
+  void cloneMembers(const Procedure&);
+
+ private:
+  YieldColumns* cols_{nullptr};
+};
+
 // Thansforms a list to column.
 class Unwind final : public SingleInputNode {
  public:

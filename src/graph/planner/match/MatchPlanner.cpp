@@ -4,8 +4,10 @@
  */
 
 #include "graph/planner/match/MatchPlanner.h"
+#include <memory>
 
 #include "graph/context/ast/CypherAstContext.h"
+#include "graph/planner/match/CallClausePlanner.h"
 #include "graph/planner/match/MatchClausePlanner.h"
 #include "graph/planner/match/ReturnClausePlanner.h"
 #include "graph/planner/match/SegmentsConnector.h"
@@ -37,6 +39,9 @@ StatusOr<SubPlan> MatchPlanner::transform(AstContext* astCtx) {
 
 StatusOr<SubPlan> MatchPlanner::genPlan(CypherClauseContextBase* clauseCtx) {
   switch (clauseCtx->kind) {
+    case CypherClauseKind::kCall: {
+      return std::make_unique<CallClausePlanner>()->transform(clauseCtx);
+    }
     case CypherClauseKind::kMatch: {
       return std::make_unique<MatchClausePlanner>()->transform(clauseCtx);
     }

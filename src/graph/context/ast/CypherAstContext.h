@@ -9,6 +9,7 @@
 #include "common/base/Base.h"
 #include "common/expression/ContainerExpression.h"
 #include "common/expression/Expression.h"
+#include "common/expression/FunctionCallExpression.h"
 #include "common/expression/PathBuildExpression.h"
 #include "graph/context/ast/AstContext.h"
 #include "parser/MatchSentence.h"
@@ -16,6 +17,7 @@
 namespace nebula {
 namespace graph {
 enum class CypherClauseKind : uint8_t {
+  kCall,
   kMatch,
   kUnwind,
   kWith,
@@ -170,6 +172,14 @@ struct MatchClauseContext final : CypherClauseContextBase {
   std::vector<Path> paths;
   std::unique_ptr<WhereClauseContext> where;
   std::unordered_map<std::string, AliasType> aliasesAvailable;
+  std::unordered_map<std::string, AliasType> aliasesGenerated;
+};
+
+struct CallClauseContext final : CypherClauseContextBase {
+  CallClauseContext() : CypherClauseContextBase(CypherClauseKind::kCall) {}
+
+  FunctionCallApocExpression* callFuncExpr{nullptr};
+  std::unique_ptr<YieldClauseContext> yield;
   std::unordered_map<std::string, AliasType> aliasesGenerated;
 };
 

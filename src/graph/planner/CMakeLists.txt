@@ -10,6 +10,7 @@ nebula_add_library(
     match/MatchSolver.cpp
     match/SegmentsConnector.cpp
     match/MatchPlanner.cpp
+    match/CallClausePlanner.cpp
     match/MatchClausePlanner.cpp
     match/UnwindClausePlanner.cpp
     match/ReturnClausePlanner.cpp

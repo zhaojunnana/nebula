@@ -5,6 +5,8 @@
 
 #include "common/expression/FunctionCallExpression.h"
 
+#include "common/base/Base.h"
+#include "common/datatypes/Value.h"
 #include "common/expression/ExprVisitor.h"
 
 namespace nebula {
@@ -97,6 +99,89 @@ std::string FunctionCallExpression::toString() const {
 
 void FunctionCallExpression::accept(ExprVisitor* visitor) {
   visitor->visit(this);
+}
+
+bool FunctionCallApocExpression::operator==(const Expression& rhs) const {
+  if (kind_ != rhs.kind()) {
+    return false;
+  }
+
+  const auto& r = static_cast<const FunctionCallApocExpression&>(rhs);
+  return name_ == r.name_ && *args_ == *(r.args_);
+}
+
+void FunctionCallApocExpression::writeTo(Encoder& encoder) const {
+  // kind_
+  encoder << kind_;
+
+  // name_
+  encoder << name_;
+
+  // args_
+  size_t sz = 0;
+  if (args_) {
+    sz = args_->numArgs();
+  }
+  encoder << sz;
+  if (sz > 0) {
+    for (const auto& arg : args_->args()) {
+      encoder << *arg;
+    }
+  }
+}
+
+void FunctionCallApocExpression::resetFrom(Decoder& decoder) {
+  // Read name_
+  name_ = decoder.readStr();
+
+  // Read args_
+  size_t sz = decoder.readSize();
+  args_ = ArgumentList::make(pool_);
+  for (size_t i = 0; i < sz; i++) {
+    args_->addArgument(decoder.readExpression(pool_));
+  }
+
+  auto funcResult = FunctionApocManager::get(name_, args_->numArgs());
+  if (funcResult.ok()) {
+    func_ = std::move(funcResult).value();
+  }
+}
+
+const Value& FunctionCallApocExpression::eval(ExpressionContext& ctx) {
+  UNUSED(ctx);
+  return Value::kNullBadType;
+}
+
+const Value& FunctionCallApocExpression::evalWithInternalCtx(ExpressionContext& ectx,
+                                                             std::string internalCtx) {
+  std::vector<std::reference_wrapper<const Value>> parameter;
+  for (const auto& arg : DCHECK_NOTNULL(args_)->args()) {
+    parameter.emplace_back(arg->eval(ectx));
+  }
+  result_ = DCHECK_NOTNULL(func_)(parameter, internalCtx);
+  return result_;
+}
+
+std::string FunctionCallApocExpression::toString() const {
+  std::stringstream out;
+
+  if (args_ != nullptr) {
+    std::vector<std::string> args(args_->numArgs());
+    std::transform(args_->args().begin(),
+                   args_->args().end(),
+                   args.begin(),
+                   [](const auto& arg) -> std::string { return arg ? arg->toString() : ""; });
+    out << name_ << "(" << folly::join(",", args) << ")";
+
+  } else {
+    out << name_ << "()";
+  }
+  return out.str();
+}
+
+void FunctionCallApocExpression::accept(ExprVisitor* visitor) {
+  // TODO impl like simple function
+  UNUSED(visitor);
 }
 
 }  // namespace nebula

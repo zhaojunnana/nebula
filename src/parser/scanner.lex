@@ -94,6 +94,7 @@ LABEL_FULL_WIDTH            {CN_EN_FULL_WIDTH}{CN_EN_NUM_FULL_WIDTH}*
 "FROM"                      { return TokenType::KW_FROM; }
 "WHERE"                     { return TokenType::KW_WHERE; }
 "MATCH"                     { return TokenType::KW_MATCH; }
+"CALL"                      { return TokenType::KW_CALL; }
 "ISOMOR"                    { return TokenType::KW_ISOMOR; } 
 "INSERT"                    { return TokenType::KW_INSERT; } 
 "YIELD"                     { return TokenType::KW_YIELD; } 

@@ -26,6 +26,7 @@ reserved_key_words = [
     'KW_FROM',
     'KW_WHERE',
     'KW_MATCH',
+    'KW_CALL',
     'KW_INSERT',
     'KW_YIELD',
     'KW_RETURN',

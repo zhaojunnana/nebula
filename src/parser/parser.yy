@@ -173,7 +173,7 @@ using namespace nebula;
 %token KW_BOOL KW_INT8 KW_INT16 KW_INT32 KW_INT64 KW_INT KW_FLOAT KW_DOUBLE
 %token KW_STRING KW_FIXED_STRING KW_TIMESTAMP KW_DATE KW_TIME KW_DATETIME KW_DURATION
 %token KW_GO KW_AS KW_TO KW_USE KW_SET KW_FROM KW_WHERE KW_ALTER
-%token KW_MATCH KW_INSERT KW_VALUE KW_VALUES KW_YIELD KW_RETURN KW_CREATE KW_VERTEX KW_VERTICES KW_IGNORE_EXISTED_INDEX 
+%token KW_MATCH KW_CALL KW_INSERT KW_VALUE KW_VALUES KW_YIELD KW_RETURN KW_CREATE KW_VERTEX KW_VERTICES KW_IGNORE_EXISTED_INDEX 
 %token KW_ISOMOR
 %token KW_EDGE KW_EDGES KW_STEPS KW_OVER KW_UPTO KW_REVERSELY KW_SPACE KW_DELETE KW_FIND
 %token KW_TAG KW_TAGS KW_UNION KW_INTERSECT KW_MINUS
@@ -229,7 +229,7 @@ using namespace nebula;
 %token <doubleval> DOUBLE
 %token <strval> STRING VARIABLE LABEL IPV4
 
-%type <strval> name_label unreserved_keyword predicate_name
+%type <strval> name_label unreserved_keyword predicate_name func_name_pattern
 %type <expr> expression expression_internal
 %type <expr> property_expression
 %type <expr> vertex_prop_expression
@@ -335,7 +335,7 @@ using namespace nebula;
 %type <strval> match_alias
 %type <match_edge_type_list> match_edge_type_list
 %type <match_edge_type_list> opt_match_edge_type_list
-%type <reading_clause> unwind_clause with_clause match_clause reading_clause
+%type <reading_clause> unwind_clause with_clause match_clause call_clause reading_clause
 %type <match_clause_list> reading_clauses reading_with_clause reading_with_clauses
 %type <match_step_range> match_step_range
 %type <order_factors> match_order_by
@@ -428,7 +428,7 @@ using namespace nebula;
 %left KW_OR KW_XOR
 %left KW_AND
 %right KW_NOT
-%left EQ NE LT LE GT GE REG KW_IN KW_NOT_IN KW_CONTAINS KW_NOT_CONTAINS KW_STARTS_WITH KW_ENDS_WITH KW_NOT_STARTS_WITH KW_NOT_ENDS_WITH KW_IS_NULL KW_IS_NOT_NULL KW_IS_EMPTY KW_IS_NOT_EMPTY
+%left EQ NE LT LE GT GE ASSIGN REG KW_IN KW_NOT_IN KW_CONTAINS KW_NOT_CONTAINS KW_STARTS_WITH KW_ENDS_WITH KW_NOT_STARTS_WITH KW_NOT_ENDS_WITH KW_IS_NULL KW_IS_NOT_NULL KW_IS_EMPTY KW_IS_NOT_EMPTY
 %nonassoc DUMMY_LOWER_THAN_MINUS
 %left PLUS MINUS
 %left STAR DIV MOD
@@ -1050,7 +1050,7 @@ edge_prop_expression
     ;
 
 function_call_expression
-    : LABEL L_PAREN opt_argument_list R_PAREN {
+    : func_name_pattern L_PAREN opt_argument_list R_PAREN {
         if ($3->numArgs() == 1 && AggFunctionManager::find(*$1).ok()) {
             if (graph::ExpressionUtils::findInnerRandFunction($3->args()[0])) {
                 delete($1);
@@ -1068,7 +1068,7 @@ function_call_expression
             throw nebula::GraphParser::syntax_error(@1, "Unknown function ");
         }
     }
-    | LABEL L_PAREN KW_DISTINCT expression_internal R_PAREN {
+    | func_name_pattern L_PAREN KW_DISTINCT expression_internal R_PAREN {
         if (AggFunctionManager::find(*$1).ok()) {
             $$ = AggregateExpression::make(qctx->objPool(), *$1, $4, true);
             delete($1);
@@ -1077,7 +1077,7 @@ function_call_expression
             throw nebula::GraphParser::syntax_error(@1, "Unknown aggregate function ");
         }
     }
-    | LABEL L_PAREN STAR R_PAREN {
+    | func_name_pattern L_PAREN STAR R_PAREN {
         auto func = *$1;
         std::transform(func.begin(), func.end(), func.begin(), ::toupper);
         if (!func.compare("COUNT")) {
@@ -1149,6 +1149,19 @@ function_call_expression
         } else {
             throw nebula::GraphParser::syntax_error(@1, "Unknown function ");
         }
+    }
+    ;
+
+func_name_pattern
+    : name_label {
+        $$ = $1;
+    }
+    | func_name_pattern DOT name_label {
+        auto func_name = new std::string("");
+        func_name->append(*$1).append(".").append(*$3);
+        $$ = func_name;
+        delete($1);
+        delete($3);
     }
     ;
 
@@ -1709,7 +1722,14 @@ match_clause
     }
     ;
 
-
+call_clause
+    : KW_CALL function_call_expression {
+        $$ = new CallClause($2, new YieldColumns());
+    }
+    | KW_CALL function_call_expression KW_YIELD yield_columns {
+        $$ = new CallClause($2, $4);
+    }
+    ;
 
 
 reading_clause
@@ -1717,6 +1737,9 @@ reading_clause
         $$ = $1;
     }
     | match_clause {
+        $$ = $1;
+    }
+    | call_clause {
         $$ = $1;
     }
     ;
@@ -1754,11 +1777,21 @@ reading_with_clauses
     ;
 
 match_sentence
-    : reading_clauses match_return {
+    : reading_clauses {
+        $$ = new MatchSentence($1, nullptr);
+    }
+    | reading_clauses match_return {
         $$ = new MatchSentence($1, $2);
+    }
+    | reading_with_clauses {
+        $$ = new MatchSentence($1, nullptr);
     }
     | reading_with_clauses match_return {
         $$ = new MatchSentence($1, $2);
+    }
+    | reading_with_clauses reading_clauses {
+        $1->add($2);
+        $$ = new MatchSentence($1, nullptr);
     }
     | reading_with_clauses reading_clauses match_return {
         $1->add($2);
