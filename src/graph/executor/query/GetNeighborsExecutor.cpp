@@ -13,17 +13,24 @@ using nebula::storage::cpp2::GetNeighborsResponse;
 namespace nebula {
 namespace graph {
 
-StatusOr<std::vector<Value>> GetNeighborsExecutor::buildRequestVids() {
+StatusOr<DataSet> GetNeighborsExecutor::buildRequestVids() {
   SCOPED_TIMER(&execTime_);
   auto inputVar = gn_->inputVar();
   auto iter = ectx_->getResult(inputVar).iter();
-  return buildRequestListByVidType(iter.get(), gn_->src(), gn_->dedup());
+  StatusOr<DataSet> reqDs;
+  if(gn_->isPush()){
+    const Value& val = ectx_->getResult(inputVar).value();
+    reqDs = buildValRequestDataSetByVidType(iter.get(), gn_->src(), const_cast<Value &>(val));
+  } else {
+    reqDs = buildRequestDataSetByVidType(iter.get(), gn_->src(), gn_->dedup());
+  }
+  return reqDs;
 }
 
 folly::Future<Status> GetNeighborsExecutor::execute() {
-  auto res = buildRequestVids();
-  NG_RETURN_IF_ERROR(res);
-  auto vids = std::move(res).value();
+  auto reqDs = buildRequestVids();
+  NG_RETURN_IF_ERROR(reqDs);
+  auto vids = std::move(reqDs).value();
   if (vids.empty()) {
     List emptyResult;
     return finish(ResultBuilder()
@@ -41,8 +48,8 @@ folly::Future<Status> GetNeighborsExecutor::execute() {
                                           qctx()->plan()->isProfileEnabled());
   return storageClient
       ->getNeighbors(param,
-                     {nebula::kVid},
-                     std::move(vids),
+                     std::move(vids.colNames),
+                     std::move(vids.rows),
                      gn_->edgeTypes(),
                      gn_->edgeDirection(),
                      gn_->statProps(),
