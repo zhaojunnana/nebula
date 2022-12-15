@@ -8,6 +8,7 @@
 
 #include <cstring>
 #include <functional>
+#include <vector>
 
 #include "common/base/Base.h"
 #include "common/datatypes/DataSet.h"
@@ -137,6 +138,10 @@ class IndexScanNode : public IndexNode {
   nebula::cpp2::ErrorCode resetIter(PartitionID partId);
   PartitionID partId_;
   /**
+   * @brief index for prefix path's current prefixKey
+   */
+  int prefixKeyIndex_ = 0;
+  /**
    * @brief index_ in this Node to access
    */
   const IndexID indexId_;
@@ -173,6 +178,9 @@ class IndexScanNode : public IndexNode {
   bool needAccessBase_{false};
   bool fatalOnBaseNotFound_{false};
   Map<std::string, size_t> colPosMap_;
+
+private:
+  Result doScan();
 };
 class QualifiedStrategy {
  public:
@@ -504,14 +512,27 @@ class PrefixPath : public Path {
    * @return const std::string&
    */
   const std::string& getPrefixKey() {
-    return prefix_;
+    return prefixes_.front();
+  }
+
+  /**
+   * @brief get prefix key
+   *
+   * @return const std::string&
+   */
+  const std::string& getPrefixKey(int index) {
+    return prefixes_.at(index);
+  }
+
+  int getPrefixSize() {
+    return prefixes_.size();
   }
 
  private:
   /**
    * @brief the bytes who is used to query in kvstore
    */
-  std::string prefix_;
+  std::vector<std::string> prefixes_;
 
   /**
    * @brief build prefix_

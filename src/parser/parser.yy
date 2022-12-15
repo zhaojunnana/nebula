@@ -1089,7 +1089,7 @@ function_call_expression
             throw nebula::GraphParser::syntax_error(@1, "Could not apply aggregation function on `*`");
         }
     }
-    | LABEL L_PAREN KW_DISTINCT STAR R_PAREN {
+    | func_name_pattern L_PAREN KW_DISTINCT STAR R_PAREN {
         auto func = *$1;
         std::transform(func.begin(), func.end(), func.begin(), ::toupper);
         if (!func.compare("COUNT")) {
@@ -1153,15 +1153,28 @@ function_call_expression
     ;
 
 func_name_pattern
-    : name_label {
+    : LABEL {
         $$ = $1;
     }
-    | func_name_pattern DOT name_label {
+    | func_name_pattern DOT LABEL {
         auto func_name = new std::string("");
         func_name->append(*$1).append(".").append(*$3);
         $$ = func_name;
         delete($1);
         delete($3);
+    }
+    | func_name_pattern DOT unreserved_keyword {
+        auto func_name = new std::string("");
+        func_name->append(*$1).append(".").append(*$3);
+        $$ = func_name;
+        delete($1);
+        delete($3);
+    }
+    | func_name_pattern DOT KW_EXISTS {
+        auto func_name = new std::string("");
+        func_name->append(*$1).append(".").append("exists");
+        $$ = func_name;
+        delete($1);
     }
     ;
 

@@ -3,11 +3,16 @@
 // This source code is licensed under Apache 2.0 License.
 
 #include "graph/util/ExpressionUtils.h"
+#include <unordered_map>
+#include <vector>
 
 #include "common/base/ObjectPool.h"
 #include "common/expression/ArithmeticExpression.h"
+#include "common/expression/ConstantExpression.h"
 #include "common/expression/Expression.h"
 #include "common/expression/PropertyExpression.h"
+#include "common/expression/RelationalExpression.h"
+#include "common/expression/UnaryExpression.h"
 #include "common/function/AggFunctionManager.h"
 #include "graph/context/QueryContext.h"
 #include "graph/context/QueryExpressionContext.h"
@@ -601,6 +606,258 @@ StatusOr<Expression *> ExpressionUtils::filterTransform(const Expression *filter
   // Reduce Unary expression
   rewrittenExpr = reduceUnaryNotExpr(rewrittenExpr);
   return rewrittenExpr;
+}
+
+Expression* ExpressionUtils::declineOrs(Expression* expr) {
+  // step1. 解除异或(暂无实际场景,跳过,TODO) a xor b = (a or b) and (!a or !b)
+
+  // step2. 消除显示not
+  auto matcher = [](const Expression *e) -> bool {
+    return e->kind() == Expression::Kind::kUnaryNot;
+  };
+  auto rewriter = [](const Expression *e) -> Expression * {
+    return reverseNotExpr(const_cast<Expression *>(e));
+  };
+  auto rewrittenExpr = RewriteVisitor::transform(expr, std::move(matcher), std::move(rewriter));
+  if (!rewrittenExpr->isLogicalExpr()) {
+    return rewrittenExpr;
+  }
+
+  // step3. do real decline ors
+  auto declinedExpr = flattenInnerLogicalExpr(declineOrsImpl(rewrittenExpr));
+
+  // step4. and item merge 此step移动至外层?
+  std::vector<Expression*> orExprs;
+  if (declinedExpr->kind() == Expression::Kind::kLogicalOr) {
+    orExprs.emplace_back(declinedExpr);
+  } else {
+    orExprs = static_cast<LogicalExpression*>(declinedExpr)->operands();
+  }
+  std::vector<Expression*> finalOrExprs;
+  for (auto orExpr : orExprs) {
+    if (orExpr->kind() != Expression::Kind::kLogicalOr) {
+      finalOrExprs.emplace_back(orExpr);
+      continue;
+    }
+    // merge some items if we can
+    // EQ and IN only yet.
+    std::unordered_map<std::string, std::vector<Expression*>> eqInMap;
+    std::vector<Expression*> finalOperands;
+    for (auto operand : static_cast<LogicalExpression*>(orExpr)->operands()) {
+      switch (operand->kind()) {
+        case Expression::Kind::kRelEQ: {
+          auto eqExpr = static_cast<RelationalExpression*>(operand);
+          auto leftKind = eqExpr->left()->kind();
+          auto rightKind = eqExpr->right()->kind();
+          if ((leftKind == Expression::Kind::kLabelAttribute
+            || leftKind == Expression::Kind::kLabelTagProperty)
+            && rightKind == Expression::Kind::kConstant) {
+            auto key = eqExpr->left()->rawString();
+            auto eqIns = eqInMap.find(key);
+            if (eqIns == eqInMap.end()) {
+              std::vector<Expression*> newEqIns;
+              newEqIns.emplace_back(operand);
+              eqInMap[key] = newEqIns;
+            } else {
+              eqInMap[key].emplace_back(operand);
+            }
+          } else {
+            finalOperands.emplace_back(operand);
+          }
+          break;
+        }
+        case Expression::Kind::kRelIn: {
+          auto eqExpr = static_cast<RelationalExpression*>(operand);
+          auto leftKind = eqExpr->left()->kind();
+          auto rightKind = eqExpr->kind();
+          if ((leftKind == Expression::Kind::kLabelAttribute
+            || leftKind == Expression::Kind::kLabelTagProperty)
+            && rightKind == Expression::Kind::kList) {
+            auto key = eqExpr->left()->rawString();
+            auto eqIns = eqInMap.find(key);
+            if (eqIns == eqInMap.end()) {
+              std::vector<Expression*> newEqIns;
+              newEqIns.emplace_back(operand);
+              eqInMap[key] = newEqIns;
+            } else {
+              eqInMap[key].emplace_back(operand);
+            }
+          } else {
+            finalOperands.emplace_back(operand);
+          }
+          break;
+        }
+        default:
+          finalOperands.emplace_back(operand);
+      }
+    }
+
+    // merge eq/in map
+    auto iter = eqInMap.begin();
+    while (iter != eqInMap.end()) {
+      if (iter->second.size() > 1) {
+        std::vector<Value> valueList;
+        for (auto eqInExpr : iter->second) {
+          auto relExpr = static_cast<RelationalExpression*>(eqInExpr);
+          if (eqInExpr->kind() == Expression::Kind::kRelEQ) {
+            valueList.emplace_back(static_cast<ConstantExpression*>(relExpr->right())->value());
+          } else {
+            auto listValues =
+              static_cast<ConstantExpression*>(relExpr->right())->value().getList().values;
+            valueList.insert(valueList.end(), listValues.begin(), listValues.end());
+          }
+        }
+        auto left = static_cast<RelationalExpression*>(iter->second.front())->left()->clone();
+        auto right = ConstantExpression::make(expr->getObjPool(), (List(valueList)));
+        finalOperands.emplace_back(RelationalExpression::makeIn(expr->getObjPool(), left, right));
+      } else {
+        finalOperands.emplace_back(iter->second.front());
+      }
+      iter++;
+    }
+
+    // merge final operands
+    if (finalOperands.size() > 1) {
+      auto mergedOr = LogicalExpression::makeKind(expr->getObjPool(), Expression::Kind::kLogicalOr);
+      mergedOr->setOperands(finalOperands);
+      finalOrExprs.emplace_back(mergedOr);
+    } else {
+      finalOrExprs.emplace_back(finalOperands.front());
+    }
+  }
+
+  if (finalOrExprs.size() > 1) {
+    auto mergedAnd = LogicalExpression::makeKind(expr->getObjPool(), Expression::Kind::kLogicalAnd);
+    mergedAnd->setOperands(finalOrExprs);
+    return mergedAnd;
+  } else {
+    return finalOrExprs.front();
+  }
+}
+
+Expression* ExpressionUtils::declineOrsImpl(Expression* expr) {
+  switch (expr->kind()) {
+    case Expression::Kind::kLogicalAnd: {
+      std::vector<Expression*> operands;
+      for (auto operand : static_cast<LogicalExpression*>(expr)->operands()) {
+        operands.emplace_back(declineOrsImpl(operand));
+      }
+      auto logic = LogicalExpression::makeKind(expr->getObjPool(), Expression::Kind::kLogicalAnd);
+      logic->setOperands(operands);
+      return logic;
+    }
+    case Expression::Kind::kLogicalOr: {
+      std::vector<Expression*> noAndOperands;
+      std::vector<Expression*> andOperands;
+      for (auto operand : static_cast<LogicalExpression*>(expr)->operands()) {
+        auto declinedExpr = declineOrsImpl(operand);
+        if (declinedExpr->kind() == Expression::Kind::kLogicalAnd) {
+          andOperands.emplace_back(declinedExpr);
+        } else {
+          noAndOperands.emplace_back(declinedExpr);
+        }
+      }
+
+      Expression* first;
+      if (!noAndOperands.empty()) {
+        if (noAndOperands.size() > 1) {
+          auto mergedOrLogic =
+            LogicalExpression::makeKind(expr->getObjPool(), Expression::Kind::kLogicalOr);
+          mergedOrLogic->setOperands(noAndOperands);
+          first = mergedOrLogic;
+        } else {
+          first = noAndOperands.front();
+        }
+      } else {
+        first = andOperands.front();
+      }
+
+      if (andOperands.empty()) {
+        return first;
+      }
+
+      std::vector<Expression*> buffer;
+      buffer.emplace_back(first);
+      int index = 0;
+      for (auto andOperand : andOperands) {
+        if (index++ == 0 && noAndOperands.empty()) {
+          continue;
+        }
+        auto childOperands = static_cast<LogicalExpression*>(andOperand)->operands();
+        std::vector<Expression*> newBuffer;
+        for (auto frontExpr : buffer) {
+          for (auto childOperand : childOperands) {
+            auto mergedOrLogic =
+              LogicalExpression::makeKind(expr->getObjPool(), Expression::Kind::kLogicalOr);
+            mergedOrLogic->addOperand(frontExpr);
+            mergedOrLogic->addOperand(childOperand);
+            newBuffer.emplace_back(mergedOrLogic);
+          }
+        }
+        buffer = newBuffer;
+      }
+      auto mergedAndLogic =
+        LogicalExpression::makeKind(expr->getObjPool(), Expression::Kind::kLogicalAnd);
+      mergedAndLogic->setOperands(buffer);
+      return mergedAndLogic;
+    }
+    default:
+      return expr;
+  }
+}
+
+Expression* ExpressionUtils::reverseNotExpr(Expression* expr) {
+  if (expr->isRelExpr()) {
+    return reverseRelExpr(static_cast<RelationalExpression*>(expr));
+  }
+
+  switch (expr->kind()) {
+    case Expression::Kind::kConstant: {
+      auto value = static_cast<ConstantExpression*>(expr)->value();
+      if (value.isBool()) {
+        return ConstantExpression::make(expr->getObjPool(), !value.getBool());
+      } else {
+        return expr;
+      }
+    }
+    case Expression::Kind::kUnaryNot: {
+      bool reverseFlag = true;
+      auto childExpr = static_cast<UnaryExpression*>(expr)->operand();
+      while (childExpr->kind() == Expression::Kind::kUnaryNot) {
+        childExpr = static_cast<UnaryExpression*>(childExpr)->operand();
+        reverseFlag = !reverseFlag;
+      }
+      if (reverseFlag) {
+        return reverseNotExpr(childExpr);
+      } else {
+        return childExpr;
+      }
+    }
+    case Expression::Kind::kLogicalAnd:
+    case Expression::Kind::kLogicalOr: {
+      ObjectPool *pool = expr->getObjPool();
+      std::vector<Expression *> operands;
+      if (expr->kind() == Expression::Kind::kLogicalAnd) {
+        pullAnds(expr);
+      } else {
+        pullOrs(expr);
+      }
+
+      auto &flattenOperands = static_cast<LogicalExpression *>(expr)->operands();
+      auto negatedKind = getNegatedLogicalExprKind(expr->kind());
+      auto logic = LogicalExpression::makeKind(pool, negatedKind);
+
+      // negate each item in the operands list
+      for (auto &operand : flattenOperands) {
+         auto tempExpr = reverseNotExpr(operand);
+         operands.emplace_back(std::move(tempExpr));
+      }
+      logic->setOperands(std::move(operands));
+      return logic;
+    }
+    default:
+      return expr;
+  }
 }
 
 void ExpressionUtils::pullAnds(Expression *expr) {

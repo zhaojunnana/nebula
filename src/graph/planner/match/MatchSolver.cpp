@@ -5,6 +5,7 @@
 
 #include "graph/planner/match/MatchSolver.h"
 
+#include "common/expression/Expression.h"
 #include "common/expression/UnaryExpression.h"
 #include "graph/context/ast/AstContext.h"
 #include "graph/context/ast/CypherAstContext.h"
@@ -120,7 +121,13 @@ Expression* MatchSolver::makeIndexFilter(const std::string& label,
       Expression::Kind::kRelLE,
       Expression::Kind::kRelGT,
       Expression::Kind::kRelGE,
+      Expression::Kind::kRelIn
   };
+
+  // rebuild filter with hybrid logical expressions
+  VLOG(2) << "Rebuild filter before: " << filter->toString();
+  filter = ExpressionUtils::declineOrs(filter);
+  VLOG(2) << "Rebuild filter after: " << filter->toString();
 
   std::vector<const Expression*> ands;
   auto kind = filter->kind();
@@ -176,6 +183,29 @@ Expression* MatchSolver::makeIndexFilter(const std::string& label,
                  left->kind() == Expression::Kind::kConstant) {
         la = static_cast<const LabelTagPropertyExpression*>(right);
         constant = static_cast<const ConstantExpression*>(left);
+      } else if (left->kind() == Expression::Kind::kLabelTagProperty) {
+        // try push left-rel-in down
+        if (right->kind() == Expression::Kind::kList) {
+          auto rList = static_cast<const ListExpression*>(right);
+
+          bool allConstant = true;
+          for (auto* le : rList->items()) {
+            if (le->kind() != Expression::Kind::kConstant) {
+              allConstant = false;
+              break;
+            }
+          }
+          if (allConstant) {
+            la = static_cast<const LabelTagPropertyExpression*>(left);
+            auto &listValue = const_cast<ListExpression *>(rList)
+              ->eval(graph::QueryExpressionContext(qctx->ectx())());
+            constant = ConstantExpression::make(qctx->objPool(), listValue);
+          } else {
+            continue;
+          }
+        } else {
+          continue;
+        }
       } else {
         continue;
       }
@@ -191,7 +221,7 @@ Expression* MatchSolver::makeIndexFilter(const std::string& label,
             ? static_cast<Expression*>(EdgePropertyExpression::make(pool, label, propName))
             : static_cast<Expression*>(TagPropertyExpression::make(pool, label, propName));
     auto* newConstant = constant->clone();
-    if (right->kind() == Expression::Kind::kConstant) {
+    if (right->kind() == Expression::Kind::kConstant || right->kind() == Expression::Kind::kList) {
       auto* rel = RelationalExpression::makeKind(pool, item->kind(), tpExpr, newConstant);
       relationals.emplace_back(rel);
     } else {

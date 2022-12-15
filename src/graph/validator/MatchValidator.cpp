@@ -401,8 +401,10 @@ Status MatchValidator::validateFilter(const Expression *filter,
   auto transformRes = ExpressionUtils::filterTransform(filter);
   NG_RETURN_IF_ERROR(transformRes);
   // rewrite Attribute to LabelTagProperty
-  whereClauseCtx.filter = ExpressionUtils::rewriteAttr2LabelTagProp(
+  auto middleRewrite = ExpressionUtils::rewriteAttr2LabelTagProp(
       transformRes.value(), whereClauseCtx.aliasesAvailable);
+  // rewrite var expression to constant expression
+  whereClauseCtx.filter = ExpressionUtils::rewriteParameter(middleRewrite, whereClauseCtx.qctx);
 
   auto typeStatus = deduceExprType(whereClauseCtx.filter);
   NG_RETURN_IF_ERROR(typeStatus);
