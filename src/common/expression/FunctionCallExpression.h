@@ -7,9 +7,11 @@
 #define COMMON_EXPRESSION_FUNCTIONCALLEXPRESSION_H_
 
 #include <boost/algorithm/string.hpp>
+#include <vector>
 
 #include "common/expression/Expression.h"
 #include "common/function/FunctionManager.h"
+#include "common/function/FunctionApocManager.h"
 
 namespace nebula {
 
@@ -137,6 +139,93 @@ class FunctionCallExpression final : public Expression {
   // runtime cache
   Value result_;
   FunctionManager::Function func_;
+};
+
+class FunctionCallApocExpression final : public Expression {
+  friend class Expression;
+
+ public:
+  FunctionCallApocExpression& operator=(const FunctionCallApocExpression& rhs) = delete;
+  FunctionCallApocExpression& operator=(FunctionCallApocExpression&&) = delete;
+
+  static FunctionCallApocExpression* make(ObjectPool* pool,
+                                      const std::string& name = "",
+                                      ArgumentList* args = nullptr) {
+    return args == nullptr
+               ? pool->makeAndAdd<FunctionCallApocExpression>(pool, name, ArgumentList::make(pool))
+               : pool->makeAndAdd<FunctionCallApocExpression>(pool, name, args);
+  }
+
+  static FunctionCallApocExpression* make(ObjectPool* pool,
+                                      const std::string& name,
+                                      std::vector<Expression*> args) {
+    auto* argList = ArgumentList::make(pool, args.size());
+    for (auto* arg : args) {
+      argList->addArgument(arg);
+    }
+    return FunctionCallApocExpression::make(pool, name, argList);
+  }
+
+  const Value& eval(ExpressionContext& ctx) override;
+
+  const Value& evalWithInternalCtx(ExpressionContext& ectx, std::string internalCtx);
+
+  bool operator==(const Expression& rhs) const override;
+
+  std::string toString() const override;
+
+  void accept(ExprVisitor* visitor) override;
+
+  Expression* clone() const override {
+    auto arguments = ArgumentList::make(pool_, args_->numArgs());
+    for (auto& arg : args_->args()) {
+      arguments->addArgument(arg->clone());
+    }
+    return FunctionCallApocExpression::make(pool_, name_, arguments);
+  }
+
+  const std::string& name() const {
+    return name_;
+  }
+
+  bool isFunc(const std::string& name) const {
+    return boost::iequals(name, name_);
+  }
+
+  const ArgumentList* args() const {
+    return args_;
+  }
+
+  ArgumentList* args() {
+    return args_;
+  }
+
+  StatusOr<std::vector<std::string>> getProcedureReturnCols() {
+    return FunctionApocManager::getReturnEntryProps(name_, DCHECK_NOTNULL(args_)->numArgs());
+  }
+
+ private:
+  friend ObjectPool;
+  FunctionCallApocExpression(ObjectPool* pool, const std::string& name, ArgumentList* args)
+      : Expression(pool, Kind::kFunctionCall), name_(name), args_(args) {
+    if (!name_.empty()) {
+      auto funcResult = FunctionApocManager::get(name_, DCHECK_NOTNULL(args_)->numArgs());
+      if (funcResult.ok()) {
+        func_ = funcResult.value();
+      }
+    }
+  }
+
+  void writeTo(Encoder& encoder) const override;
+  void resetFrom(Decoder& decoder) override;
+
+ private:
+  std::string name_;
+  ArgumentList* args_;
+
+  // runtime cache
+  Value result_;
+  FunctionApocManager::ApocFunction func_;
 };
 
 }  // namespace nebula

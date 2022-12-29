@@ -81,6 +81,7 @@
 #include "graph/executor/query/LimitExecutor.h"
 #include "graph/executor/query/MinusExecutor.h"
 #include "graph/executor/query/ProjectExecutor.h"
+#include "graph/executor/query/ProcedureExecutor.h"
 #include "graph/executor/query/RollUpApplyExecutor.h"
 #include "graph/executor/query/SampleExecutor.h"
 #include "graph/executor/query/ScanEdgesExecutor.h"
@@ -203,6 +204,9 @@ Executor *Executor::makeExecutor(QueryContext *qctx, const PlanNode *node) {
     }
     case PlanNode::Kind::kProject: {
       return pool->makeAndAdd<ProjectExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kProcedure: {
+      return pool->makeAndAdd<ProcedureExecutor>(node, qctx);
     }
     case PlanNode::Kind::kUnwind: {
       return pool->makeAndAdd<UnwindExecutor>(node, qctx);

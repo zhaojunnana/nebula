@@ -71,6 +71,8 @@ const char* PlanNode::toString(PlanNode::Kind kind) {
       return "Intersect";
     case Kind::kMinus:
       return "Minus";
+    case Kind::kProcedure:
+      return "Procedure";
     case Kind::kProject:
       return "Project";
     case Kind::kUnwind:

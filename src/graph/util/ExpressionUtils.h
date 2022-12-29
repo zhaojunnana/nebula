@@ -137,6 +137,15 @@ class ExpressionUtils {
   // Returns the negation of the given arithmetic kind: plus -> minus
   static Expression::Kind getNegatedArithmeticType(const Expression::Kind kind);
 
+  // decline ors in expression and merge same column eq/in to a single in-expr
+  // 1. (a = 1) or (b > 2 and b <5) -> (a = 1 or b > 2) and (a = 1 or b < 5)
+  // 2. a = 1 or a = 2 -> a in [1, 2]
+  // 3. a = 1 or a in [2, 3] -> a in [1, 2, 3]
+  static Expression* declineOrs(Expression* expr);
+  static Expression* declineOrsImpl(Expression* expr);
+
+  static Expression* reverseNotExpr(Expression* expr);
+
   // For a logical AND expression, extracts all non-logicalAndExpr from its operands and set them as
   // the new operands
   static void pullAnds(Expression* expr);

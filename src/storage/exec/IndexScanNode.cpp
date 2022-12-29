@@ -3,6 +3,8 @@
  * This source code is licensed under Apache 2.0 License.
  */
 #include "storage/exec/IndexScanNode.h"
+#include <utility>
+#include <vector>
 
 namespace nebula {
 namespace storage {
@@ -325,21 +327,40 @@ QualifiedStrategy::Result PrefixPath::qualified(const Map<std::string, Value>& r
 
 void PrefixPath::resetPart(PartitionID partId) {
   std::string p = IndexKeyUtils::indexPrefix(partId);
-  prefix_ = prefix_.replace(0, p.size(), p);
+  for (auto &prefix : prefixes_) {
+    prefix = prefix.replace(0, p.size(), p);
+  }
 }
 
 void PrefixPath::buildKey() {
   std::string common;
   common.append(IndexKeyUtils::indexPrefix(0, index_->index_id_ref().value()));
+  std::vector<std::string> prefixBuffer;
+  prefixBuffer.emplace_back(std::move(common));
   auto fieldIter = index_->get_fields().begin();
   for (size_t i = 0; i < hints_.size(); i++, fieldIter++) {
     auto& hint = hints_[i];
     CHECK(fieldIter->get_name() == hint.get_column_name());
     auto type = IndexKeyUtils::toValueType(fieldIter->get_type().get_type());
     CHECK(type != Value::Type::STRING || fieldIter->get_type().type_length_ref().has_value());
-    encodeValue(hint.get_begin_value(), fieldIter->get_type(), i, common);
-    serializeString_ +=
-        fmt::format("{}={}, ", hint.get_column_name(), hint.get_begin_value().toString());
+
+    for (auto &prefix : prefixBuffer) {
+      if (hint.get_include_end() && hint.get_end_value().isList()) {
+        std::vector<std::string> newPrefixBuffer;
+        for (auto &value : hint.get_end_value().getList().values) {
+          std::string prefixCopy = prefix;
+          encodeValue(value, fieldIter->get_type(), i, prefixCopy);
+          newPrefixBuffer.emplace_back(std::move(prefixCopy));
+        }
+        prefixBuffer = newPrefixBuffer;
+        serializeString_ +=
+          fmt::format("{}in{}, ", hint.get_column_name(), hint.get_end_value().toString());
+      } else {
+        encodeValue(hint.get_begin_value(), fieldIter->get_type(), i, prefix);
+        serializeString_ +=
+          fmt::format("{}={}, ", hint.get_column_name(), hint.get_begin_value().toString());
+      }
+    }
   }
   for (; fieldIter != index_->get_fields().end(); fieldIter++) {
     if (UNLIKELY(fieldIter->get_type().get_type() == nebula::cpp2::PropertyType::GEOGRAPHY)) {
@@ -347,7 +368,7 @@ void PrefixPath::buildKey() {
       break;
     }
   }
-  prefix_ = std::move(common);
+  prefixes_ = std::move(prefixBuffer);
 }
 
 // End of PrefixPath
@@ -414,12 +435,34 @@ IndexScanNode::IndexScanNode(const IndexScanNode& node)
 
 nebula::cpp2::ErrorCode IndexScanNode::doExecute(PartitionID partId) {
   partId_ = partId;
+  prefixKeyIndex_ = 0;
   auto ret = resetIter(partId);
   return ret;
 }
 
 IndexNode::Result IndexScanNode::doNext() {
+  do {
+    Result result = doScan();
+    if (!result.success()) {
+      return result;
+    }
+    if (result.hasData()) {
+      return result;
+    }
+
+    if (!path_->isRange()
+      && dynamic_cast<PrefixPath*>(path_.get())->getPrefixSize() > prefixKeyIndex_+1) {
+      prefixKeyIndex_++;
+      resetIter(partId_);
+    } else {
+      return result;
+    }
+  } while (true);
+}
+
+IndexNode::Result IndexScanNode::doScan() {
   for (; iter_ && iter_->valid(); iter_->next()) {
+    // LOG(INFO) << "Interate index key " << decodeFromIndex(iter_->key().toString()).toString();
     if (!checkTTL()) {
       continue;
     }
@@ -432,6 +475,7 @@ IndexNode::Result IndexScanNode::doNext() {
       auto key = iter_->key().toString();
       iter_->next();
       Row row = decodeFromIndex(key);
+      // LOG(INFO) << "Index row " << row.toString();
       return Result(std::move(row));
     }
     std::pair<std::string, std::string> kv;
@@ -487,7 +531,7 @@ nebula::cpp2::ErrorCode IndexScanNode::resetIter(PartitionID partId) {
     kvstore_->range(spaceId_, partId, rangePath->getStartKey(), rangePath->getEndKey(), &iter_);
   } else {
     auto prefixPath = dynamic_cast<PrefixPath*>(path_.get());
-    ret = kvstore_->prefix(spaceId_, partId, prefixPath->getPrefixKey(), &iter_);
+    ret = kvstore_->prefix(spaceId_, partId, prefixPath->getPrefixKey(prefixKeyIndex_), &iter_);
   }
   return ret;
 }

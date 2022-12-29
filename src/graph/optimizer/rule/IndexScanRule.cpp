@@ -5,6 +5,7 @@
 
 #include "graph/optimizer/rule/IndexScanRule.h"
 
+#include "common/expression/Expression.h"
 #include "graph/optimizer/OptContext.h"
 #include "graph/optimizer/OptGroup.h"
 #include "graph/optimizer/OptRule.h"
@@ -224,7 +225,7 @@ inline bool verifyType(const Value& val) {
     case Value::Type::NULLVALUE:
     case Value::Type::VERTEX:
     case Value::Type::EDGE:
-    case Value::Type::LIST:
+    // case Value::Type::LIST:
     case Value::Type::SET:
     case Value::Type::MAP:
     case Value::Type::DATASET:
@@ -252,6 +253,12 @@ Status IndexScanRule::appendColHint(std::vector<IndexColumnHint>& hints,
     if (item.relOP_ == Expression::Kind::kRelEQ) {
       isRangeScan = false;
       begin = {item.value_, true};
+      break;
+    }
+    if (item.relOP_ == Expression::Kind::kRelIn) {
+      isRangeScan = false;
+      begin = {item.value_.getList().values.front(), true};
+      end = {item.value_, true};
       break;
     }
     // because only type for bool is true/false, which can not satisfy [start,
@@ -305,6 +312,10 @@ Status IndexScanRule::appendColHint(std::vector<IndexColumnHint>& hints,
     hint.scan_type_ref() = storage::cpp2::ScanType::RANGE;
   } else {
     hint.begin_value_ref() = begin.first;
+    if (!end.first.empty()) {
+      hint.end_value_ref() = end.first;
+      hint.include_end_ref() = end.second;
+    }
     hint.scan_type_ref() = storage::cpp2::ScanType::PREFIX;
   }
   hint.column_name_ref() = col.get_name();
@@ -377,7 +388,8 @@ Status IndexScanRule::analyzeExpression(
     case Expression::Kind::kRelEQ:
     case Expression::Kind::kRelLT:
     case Expression::Kind::kRelGT:
-    case Expression::Kind::kRelNE: {
+    case Expression::Kind::kRelNE:
+    case Expression::Kind::kRelIn: {
       auto* rExpr = static_cast<RelationalExpression*>(expr);
       if (isEdge) {
         NG_RETURN_IF_ERROR(addFilterItem<EdgePropertyExpression>(rExpr, items, qctx));

@@ -7,6 +7,19 @@
 
 namespace nebula {
 
+std::string CallClause::toString() const {
+  std::string buf;
+  buf.reserve(256);
+
+  buf += "CALL ";
+  buf += functionCall_->toString();
+  if (yieldColumns_ != nullptr) {
+    buf += " ";
+    buf += yieldColumns_->toString();
+  }
+  return buf;
+}
+
 std::string MatchClause::toString() const {
   std::string buf;
   buf.reserve(256);
