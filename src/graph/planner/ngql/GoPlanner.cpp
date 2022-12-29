@@ -405,10 +405,11 @@ SubPlan GoPlanner::oneStepPlan(SubPlan& startVidPlan, AstContext* astCtx) {
     auto* gc = static_cast<GoSentence*>(astCtx->sentence);
     if (gc->whereClause() != nullptr) {
       bool hasInput = false;
-      //filter剪枝
-      auto* newFilter = checkFilterExpressionIsPush(gn, gc->whereClause()->filter()->clone(), &hasInput);
+      // filter剪枝
+      auto* newFilter =
+          checkFilterExpressionIsPush(gn, gc->whereClause()->filter()->clone(), &hasInput);
       //判断是否需要变量下推
-      if(hasInput){
+      if (hasInput) {
         hasInput = false;
         checkFilterExpressionIsPush(gn, gc->whereClause()->filter()->clone(), &hasInput);
       }
@@ -444,7 +445,7 @@ Expression* GoPlanner::checkFilterExpressionIsPush(GetNeighbors* gn,
       newFilter = logicAnd->operand(1);
     } else if (opers[1] == nullptr) {
       newFilter = logicAnd->operand(0);
-    }else {
+    } else {
       auto filterAnd = LogicalExpression::makeAnd(logicAnd->getObjPool());
       for (size_t i = 0; i < opers.size(); i++) {
         filterAnd->addOperand(opers[i]);
@@ -470,7 +471,66 @@ Expression* GoPlanner::checkFilterExpressionIsPush(GetNeighbors* gn,
     if (left == nullptr || right == nullptr) {
       return nullptr;
     }
-  } else if (filter->kind() == Expression::Kind::kDstProperty) {
+  } else if (filter->kind() == Expression::Kind::kList) {
+    auto* listExpr = static_cast<ListExpression*>(filter);
+    auto& items = listExpr->items();
+    for (size_t i = 0; i < items.size(); i++) {
+      filter = checkFilterExpressionIsPush(gn, items[i], hasInput);
+      if (filter == nullptr || items[i] != filter) {
+        return nullptr;
+      }
+    }
+  } else if (filter->kind() == Expression::Kind::kListComprehension) {
+    auto* listComprehensionExpr = static_cast<ListComprehensionExpression*>(filter);
+    if (listComprehensionExpr->hasMapping()) {
+      return checkFilterExpressionIsPush(gn, listComprehensionExpr->mapping(), hasInput);
+    }
+  } else if (filter->kind() == Expression::Kind::kSet) {
+    auto* setExpr = static_cast<SetExpression*>(filter);
+    auto& items = setExpr->items();
+    for (size_t i = 0; i < items.size(); i++) {
+      filter = checkFilterExpressionIsPush(gn, items[i], hasInput);
+      if (filter == nullptr || items[i] != filter) {
+        return nullptr;
+      }
+    }
+  } else if (filter->kind() == Expression::Kind::kMap) {
+    return nullptr;
+  } else if (filter->kind() == Expression::Kind::kIsNotEmpty ||
+             filter->kind() == Expression::Kind::kIsEmpty ||
+             filter->kind() == Expression::Kind::kIsNotNull ||
+             filter->kind() == Expression::Kind::kIsNull) {
+    auto* unaryExpr = static_cast<UnaryExpression*>(filter);
+    return checkFilterExpressionIsPush(gn, unaryExpr->operand(), hasInput);
+  } else if (filter->kind() == Expression::Kind::kAdd ||
+             filter->kind() == Expression::Kind::kMinus ||
+             filter->kind() == Expression::Kind::kMultiply ||
+             filter->kind() == Expression::Kind::kDivision ||
+             filter->kind() == Expression::Kind::kMod) {
+    auto* arithmeticExpr = static_cast<ArithmeticExpression*>(filter);
+    auto left = checkFilterExpressionIsPush(gn, arithmeticExpr->left(), hasInput);
+    auto right = checkFilterExpressionIsPush(gn, arithmeticExpr->right(), hasInput);
+    if (left == nullptr || right == nullptr) {
+      return nullptr;
+    }
+  } else if (filter->kind() == Expression::Kind::kAttribute) {
+    auto* binaryExpr = static_cast<BinaryExpression*>(filter);
+    auto left = checkFilterExpressionIsPush(gn, binaryExpr->left(), hasInput);
+    auto right = checkFilterExpressionIsPush(gn, binaryExpr->right(), hasInput);
+    if (left == nullptr || right == nullptr) {
+      return nullptr;
+    }
+  } else if (filter->kind() == Expression::Kind::kPredicate) {
+    auto* predicateExpr = static_cast<PredicateExpression*>(filter);
+    if (predicateExpr->hasFilter()) {
+      return checkFilterExpressionIsPush(gn, predicateExpr->filter(), hasInput);
+    }
+  } else if (filter->kind() == Expression::Kind::kReduce) {
+    auto* reduceExpr = static_cast<ReduceExpression*>(filter);
+    return checkFilterExpressionIsPush(gn, reduceExpr->mapping(), hasInput);
+  } else if (filter->kind() == Expression::Kind::kDstProperty ||
+             filter->kind() == Expression::Kind::kFunctionCall ||
+             filter->kind() == Expression::Kind::kVar) {
     return nullptr;
   } else if (filter->kind() == Expression::Kind::kInputProperty) {
     *hasInput = true;
