@@ -79,6 +79,7 @@ std::unique_ptr<kvstore::KVStore> StorageServer::getStoreInstance() {
   if (FLAGS_store_type == "nebula") {
     auto nbStore = std::make_unique<kvstore::NebulaStore>(
         std::move(options), ioThreadPool_, localHost_, workers_);
+    nbStore->setMetaClient(metaClient_.get());
     if (!(nbStore->init())) {
       LOG(ERROR) << "nebula store init failed";
       return nullptr;

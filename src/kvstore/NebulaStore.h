@@ -23,6 +23,7 @@
 #include "kvstore/PartManager.h"
 #include "kvstore/raftex/RaftexService.h"
 #include "kvstore/raftex/SnapshotManager.h"
+#include "clients/meta/MetaClient.h"
 
 namespace nebula {
 namespace kvstore {
@@ -787,7 +788,8 @@ class NebulaStore : public KVStore, public Handler {
                                 PartitionID partId,
                                 KVEngine* engine,
                                 bool asLearner,
-                                const std::vector<HostAddr>& raftPeers);
+                                const std::vector<HostAddr>& raftPeers,
+                                nebula::cpp2::PropertyType vidType = nebula::cpp2::PropertyType::UNKNOWN);
 
   /**
    * @brief Start a new listener part
@@ -840,6 +842,9 @@ class NebulaStore : public KVStore, public Handler {
    */
   void removeSpaceDir(const std::string& dir);
 
+ public:
+  void setMetaClient(meta::MetaClient* metaClient);
+
  private:
   // The lock used to protect spaces_
   folly::RWSpinLock lock_;
@@ -861,6 +866,7 @@ class NebulaStore : public KVStore, public Handler {
   folly::ConcurrentHashMap<std::string, std::function<void(std::shared_ptr<Part>&)>>
       onNewPartAdded_;
   std::function<void(GraphSpaceID)> beforeRemoveSpace_{nullptr};
+  meta::MetaClient* metaClient_{nullptr};
 };
 
 }  // namespace kvstore
