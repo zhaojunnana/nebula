@@ -340,7 +340,7 @@ std::tuple<nebula::cpp2::ErrorCode, LogID, TermID> Part::commitLogs(
       }
     }
 
-    if (FLAGS_enable_binlog && isLeader()) {
+    if (FLAGS_enable_binlog && role_ == Role::LEADER) {
       commitBinLog(lastId, lastTerm, log);
     }
 
