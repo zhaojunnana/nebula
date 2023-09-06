@@ -5,6 +5,8 @@
 #ifndef GRAPH_EXECUTOR_STREAMEXECUTOR_H_
 #define GRAPH_EXECUTOR_STREAMEXECUTOR_H_
 
+#include <atomic>
+#include <memory>
 #include "graph/executor/Executor.h"
 
 namespace nebula {
@@ -15,27 +17,28 @@ class QueryContext;
 class RoundResult {
     public:
      RoundResult() = default;
-     RoundResult(std::shared_ptr<DataSet> out, bool hasNextRound, int offset):
-       output_(out), hasNextRound_(hasNextRound), offset_(offset) {}
+     RoundResult(std::shared_ptr<DataSet> out, bool hasNextRound, std::string offset):
+       output_(out), hasNextRound_(hasNextRound), offset_(std::move(offset)) {}
      std::shared_ptr<DataSet> getOutputData();
      bool hasNextRound();
-     int getOffset();
+     std::string getOffset();
 
     private:
      std::shared_ptr<DataSet> output_{nullptr};
      bool hasNextRound_;
-     int offset_;
+     std::string offset_;
 };
 
 class StreamExecutor : public Executor {
  public:
   // Create stream executor according to plan node
-  static StreamExecutor *createStream(const PlanNode *node, QueryContext *qctx);
+  static StreamExecutor *createStream(const PlanNode *node, QueryContext *qctx,
+   std::shared_ptr<std::atomic_bool> stopFlag);
 
   folly::Future<Status> execute() override;
 
   virtual std::shared_ptr<RoundResult> executeOneRound(
-    std::shared_ptr<DataSet> input, int64_t offset) = 0;
+    std::shared_ptr<DataSet> input, std::string offset) = 0;
 
   int32_t markSubmitTask();
 
@@ -43,15 +46,22 @@ class StreamExecutor : public Executor {
 
   void setRootPromise(folly::Promise<Status>&& rootPromise);
 
+  void setSharedStopFLag(std::shared_ptr<std::atomic_bool> stopFlag);
+
+  bool isExecutorStopped();
+
  protected:
   static StreamExecutor *makeStreamExecutor(const PlanNode *node,
                                             QueryContext *qctx,
-                                            std::unordered_map<int64_t, StreamExecutor *> *visited);
+                                            std::unordered_map<int64_t, StreamExecutor *> *visited,
+                                            std::shared_ptr<std::atomic_bool> stopFlag);
 
   static StreamExecutor *makeStreamExecutor(QueryContext *qctx, const PlanNode *node);
 
   StreamExecutor(const std::string &name, const PlanNode *node, QueryContext *qctx)
       : Executor(name, node, qctx) {}
+
+  void markStopExecutor();
 
   virtual void markFinishExecutor();
 
@@ -64,8 +74,9 @@ class StreamExecutor : public Executor {
   const int32_t batch = 10;
 
  private:
-     std::atomic_int32_t taskCount = 0;
-     std::atomic_int32_t upStreamFinishCount = 0;
+     std::atomic_int32_t taskCount_ = 0;
+     std::atomic_int32_t upStreamFinishCount_ = 0;
+     std::shared_ptr<std::atomic_bool> stopFlag_ = {nullptr};
 };
 
 }  // namespace graph

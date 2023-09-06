@@ -7,6 +7,8 @@
 #include "graph/scheduler/AsyncMsgNotifyBasedScheduler.h"
 #include "graph/scheduler/AsyncStreamBasedScheduler.h"
 #include <folly/executors/CPUThreadPoolExecutor.h>
+#include <atomic>
+#include <memory>
 #include "graph/executor/StreamExecutor.h"
 
 DECLARE_bool(enable_lifetime_optimize);
@@ -48,7 +50,8 @@ folly::Future<Status> AsyncStreamBasedScheduler::schedule() {
     analyzeLifetime(root);
   }
   // plan node 1 to 1 create to stream executor
-  auto executor = StreamExecutor::createStream(root, qctx_);
+  auto stopFlag = std::make_shared<std::atomic_bool>(false);
+  auto executor = StreamExecutor::createStream(root, qctx_, stopFlag);
   DLOG(INFO) << formatPrettyDependencyTree(executor);
   return doSchedule(executor);
 }
@@ -85,7 +88,7 @@ folly::Future<Status> AsyncStreamBasedScheduler::doSchedule(StreamExecutor* root
 
   for (auto leaf : leafExeuctors) {
     leaf->markSubmitTask();
-    submitTask(pool, leaf, nullptr, -1);
+    submitTask(pool, leaf, nullptr, "");
   }
   return resultFuture;
 }
@@ -93,23 +96,29 @@ folly::Future<Status> AsyncStreamBasedScheduler::doSchedule(StreamExecutor* root
 void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
                                            StreamExecutor* executor,
                                            std::shared_ptr<DataSet> input,
-                                           int64_t offset) const {
+                                           std::string offset) const {
   folly::via(&pool, [&pool, executor, input, offset, this] {
     auto r = executor->executeOneRound(input, offset);
     auto out = r->getOutputData();
-    if (nullptr != out) {
+
+    auto isStopped = executor->isExecutorStopped();
+    if (isStopped) {
+      DLOG(INFO) << "stream stopped " << executor->id() << " , igore next task submit.";
+    }
+
+    if (!isStopped && nullptr != out) {
       for (auto successor : executor->successors()) {
         auto next = static_cast<StreamExecutor*>(successor);
         next->markSubmitTask();
-        submitTask(pool, next, out, -1);
+        submitTask(pool, next, out, "");
       }
     }
 
-    if (r->hasNextRound()) {
+    if (!isStopped && r->hasNextRound()) {
       executor->markSubmitTask();
     }
     executor->markFinishTask(r->hasNextRound());
-    if (r->hasNextRound()) {
+    if (!isStopped && r->hasNextRound()) {
       submitTask(pool, executor, input, r->getOffset());
     }
   });

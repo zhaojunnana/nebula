@@ -19,7 +19,7 @@ class MockStartStreamExecutor final : public StreamExecutor {
   }
 
   std::shared_ptr<RoundResult> executeOneRound(
-    std::shared_ptr<DataSet> input, int64_t offset) override;
+    std::shared_ptr<DataSet> input, std::string offset) override;
 };
 
 }  // namespace graph

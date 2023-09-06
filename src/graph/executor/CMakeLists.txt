@@ -10,6 +10,7 @@ nebula_add_library(
     stream/MockStartStreamExecutor.cpp
     stream/MockTransportStreamExecutor.cpp
     stream/StreamCollectExecutor.cpp
+    stream/LimitStreamExecutor.cpp
     logic/LoopExecutor.cpp
     logic/PassThroughExecutor.cpp
     logic/StartExecutor.cpp
