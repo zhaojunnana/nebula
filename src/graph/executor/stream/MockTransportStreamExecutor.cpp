@@ -8,9 +8,9 @@ namespace nebula {
 namespace graph {
 
 std::shared_ptr<RoundResult> MockTransportStreamExecutor::executeOneRound(
-  std::shared_ptr<DataSet> input, int64_t offset) {
+  std::shared_ptr<DataSet> input, std::string offset) {
     std::cout << "input: " << input << ", offset: " << offset << std::endl;
-    return std::make_shared<RoundResult>(input, false, -1);
+    return std::make_shared<RoundResult>(input, false, "");
 }
 
 }  // namespace graph

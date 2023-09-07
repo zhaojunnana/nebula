@@ -8,13 +8,13 @@ namespace nebula {
 namespace graph {
 
 std::shared_ptr<RoundResult> StreamCollectExecutor::executeOneRound(
-  std::shared_ptr<DataSet> input, int64_t offset) {
+  std::shared_ptr<DataSet> input, std::string offset) {
     std::cout << "input: " << input << ", offset: " << offset << std::endl;
     DLOG(INFO) << "StreamCollectExecutor executeOneRound.";
     std::lock_guard<std::mutex> lock(mutex_);
     finalDataSet_.append(std::move(*input));
     DLOG(INFO) << "finalDataSet_ appended.";
-    return std::make_shared<RoundResult>(nullptr, false, -1);
+    return std::make_shared<RoundResult>(nullptr, false, "");
 }
 
 void StreamCollectExecutor::markFinishExecutor() {
