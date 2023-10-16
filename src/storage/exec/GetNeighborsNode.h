@@ -28,6 +28,7 @@ class GetNeighborsNode : public QueryNode<VertexID> {
                    IterateNode<VertexID>* upstream,
                    EdgeContext* edgeContext,
                    nebula::DataSet* resultDataSet,
+                   std::unordered_map<Value, cpp2::ScanCursor>* cursors,
                    int64_t limit = 0)
       : context_(context),
         hashJoinNode_(hashJoinNode),
@@ -36,6 +37,7 @@ class GetNeighborsNode : public QueryNode<VertexID> {
         resultDataSet_(resultDataSet),
         limit_(limit) {
     name_ = "GetNeighborsNode";
+    retCursors_ = cursors;
   }
 
   nebula::cpp2::ErrorCode doExecute(PartitionID partId, const VertexID& vId) override {
@@ -96,6 +98,11 @@ class GetNeighborsNode : public QueryNode<VertexID> {
       resultDataSet_->rows.emplace_back(std::move(row));
     }
 
+    cpp2::ScanCursor c;
+    if (upstream_->valid()) {
+      c.next_cursor_ref() = upstream_->key().str();
+    }
+    retCursors_->emplace(vId, std::move(c));
     return nebula::cpp2::ErrorCode::SUCCEEDED;
   }
 
@@ -165,6 +172,8 @@ class GetNeighborsNode : public QueryNode<VertexID> {
   EdgeContext* edgeContext_;
   nebula::DataSet* resultDataSet_;
   int64_t limit_;
+  // cursors for next scan
+  std::unordered_map<Value, cpp2::ScanCursor>* retCursors_;
 };
 
 class GetNeighborsSampleNode : public GetNeighborsNode {
@@ -174,8 +183,9 @@ class GetNeighborsSampleNode : public GetNeighborsNode {
                          IterateNode<VertexID>* upstream,
                          EdgeContext* edgeContext,
                          nebula::DataSet* resultDataSet,
+                         std::unordered_map<Value, cpp2::ScanCursor>* cursors,
                          int64_t limit)
-      : GetNeighborsNode(context, hashJoinNode, upstream, edgeContext, resultDataSet, limit) {
+      : GetNeighborsNode(context, hashJoinNode, upstream, edgeContext, resultDataSet, cursors, limit) {
     sampler_ = std::make_unique<nebula::algorithm::ReservoirSampling<Sample>>(limit);
     name_ = "GetNeighborsSampleNode";
   }

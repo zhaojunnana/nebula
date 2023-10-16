@@ -52,7 +52,8 @@ StorageRpcRespFuture<cpp2::GetNeighborsResponse> StorageClient::getNeighbors(
     const std::vector<cpp2::OrderBy>& orderBy,
     int64_t limit,
     const Expression* filter,
-    const Expression* tagFilter) {
+    const Expression* tagFilter,
+    std::unordered_map<Value, cpp2::ScanCursor> cursors) {
   auto cbStatus = getIdFromValue(param.space);
   if (!cbStatus.ok()) {
     return folly::makeFuture<StorageRpcResponse<cpp2::GetNeighborsResponse>>(
@@ -74,6 +75,7 @@ StorageRpcRespFuture<cpp2::GetNeighborsResponse> StorageClient::getNeighbors(
     req.column_names_ref() = colNames;
     req.parts_ref() = std::move(c.second);
     req.common_ref() = common;
+    req.cursors_ref() = std::move(cursors);
     cpp2::TraverseSpec spec;
     spec.edge_types_ref() = edgeTypes;
     spec.edge_direction_ref() = edgeDirection;

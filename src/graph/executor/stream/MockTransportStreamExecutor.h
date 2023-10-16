@@ -19,7 +19,7 @@ class MockTransportStreamExecutor final : public StreamExecutor {
   }
 
   std::shared_ptr<RoundResult> executeOneRound(
-    std::shared_ptr<DataSet> input, std::string offset) override;
+    std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) override;
 };
 
 }  // namespace graph

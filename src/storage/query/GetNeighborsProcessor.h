@@ -50,6 +50,7 @@ class GetNeighborsProcessor
   StoragePlan<VertexID> buildPlan(RuntimeContext* context,
                                   StorageExpressionContext* expCtx,
                                   nebula::DataSet* result,
+                                  std::unordered_map<Value, cpp2::ScanCursor>* cursors,
                                   int64_t limit = 0,
                                   bool random = false);
 
@@ -80,12 +81,14 @@ class GetNeighborsProcessor
       PartitionID partId,
       const std::vector<nebula::Value>& vids,
       int64_t limit,
-      bool random);
+      bool random,
+      std::unordered_map<Value, cpp2::ScanCursor>* cursors);
 
  private:
   std::vector<RuntimeContext> contexts_;
   std::vector<StorageExpressionContext> expCtxs_;
   std::vector<nebula::DataSet> results_;
+  std::unordered_map<Value, cpp2::ScanCursor> cursors_;
 };
 
 }  // namespace storage

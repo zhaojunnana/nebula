@@ -24,7 +24,7 @@ class AsyncStreamBasedScheduler final : public Scheduler {
   folly::Future<Status> doSchedule(StreamExecutor* root) const;
 
   void submitTask(folly::Executor& pool, StreamExecutor* executor,
-    std::shared_ptr<DataSet> input, std::string offset) const;
+    std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) const;
 
   void addExecuting(Executor* executor) const;
 

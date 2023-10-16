@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 #include "common/base/Status.h"
+#include "graph/executor/stream/MockGetNeighborsStreamExecutor.h"
 #include "graph/executor/stream/LimitStreamExecutor.h"
 #include "graph/executor/stream/MockStartStreamExecutor.h"
 #include "graph/executor/stream/MockTransportStreamExecutor.h"
@@ -27,7 +28,7 @@ bool RoundResult::hasNextRound() {
     return hasNextRound_;
 }
 
-std::string RoundResult::getOffset() {
+std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> RoundResult::getOffset() {
     return offset_;
 }
 
@@ -75,12 +76,20 @@ StreamExecutor *StreamExecutor::makeStreamExecutor(QueryContext *qctx, const Pla
     case PlanNode::Kind::kTagIndexFullScan:
     case PlanNode::Kind::kTagIndexPrefixScan:
     case PlanNode::Kind::kTagIndexRangeScan:
-    case PlanNode::Kind::kTraverse:
+    case PlanNode::Kind::kTraverse:{
+      return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kExpand: {
+      return pool->makeAndAdd<MockGetNeighborsStreamExecutor>(node, qctx);
+    }
     case PlanNode::Kind::kAppendVertices: {
       return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
     }
     case PlanNode::Kind::kLimit: {
       return pool->makeAndAdd<LimitStreamExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kExpandAll:{
+      return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
     }
     case PlanNode::Kind::kProject: {
       return pool->makeAndAdd<StreamCollectExecutor>(node, qctx);
