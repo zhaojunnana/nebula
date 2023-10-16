@@ -36,8 +36,8 @@ folly::Future<Status> TraverseExecutor::execute() {
 Status TraverseExecutor::buildRequestVids() {
   SCOPED_TIMER(&execTime_);
   const auto& inputVar = traverse_->inputVar();
-  auto inputIter = ectx_->getResult(inputVar).iterRef();
-  auto iter = static_cast<SequentialIter*>(inputIter);
+  auto inputIter = ectx_->getResult(inputVar).iter();
+  auto iter = static_cast<SequentialIter*>(inputIter.get());
   size_t iterSize = iter->size();
   vids_.reserve(iterSize);
   auto* src = traverse_->src();
@@ -456,10 +456,19 @@ folly::Future<Status> TraverseExecutor::buildPathMultiJobs(size_t minStep, size_
     return rows;
   };
 
-  auto gather = [this](std::vector<std::vector<Row>> resp) mutable -> Status {
+  auto gather = [this](std::vector<folly::Try<std::vector<Row>>>&& resps) mutable -> Status {
     // MemoryTrackerVerified
     memory::MemoryCheckGuard guard;
-    for (auto& rows : resp) {
+    for (auto& respVal : resps) {
+      if (respVal.hasException()) {
+        auto ex = respVal.exception().get_exception<std::bad_alloc>();
+        if (ex) {
+          throw std::bad_alloc();
+        } else {
+          throw std::runtime_error(respVal.exception().what().c_str());
+        }
+      }
+      auto rows = std::move(respVal).value();
       if (rows.empty()) {
         continue;
       }

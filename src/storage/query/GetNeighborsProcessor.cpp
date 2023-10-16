@@ -80,7 +80,8 @@ void GetNeighborsProcessor::runInSingleThread(const cpp2::GetNeighborsRequest& r
   memory::MemoryCheckGuard guard;
   contexts_.emplace_back(RuntimeContext(planContext_.get()));
   expCtxs_.emplace_back(StorageExpressionContext(spaceVidLen_, isIntId_));
-  auto plan = buildPlan(&contexts_.front(), &expCtxs_.front(), &resultDataSet_, limit, random);
+  auto cursors = req.get_cursors();
+  auto plan = buildPlan(&contexts_.front(), &expCtxs_.front(), &resultDataSet_, &cursors, limit, random);
   std::unordered_set<PartitionID> failedParts;
   for (const auto& partEntry : req.get_parts()) {
     contexts_.front().resultStat_ = ResultStatus::NORMAL;
@@ -95,6 +96,13 @@ void GetNeighborsProcessor::runInSingleThread(const cpp2::GetNeighborsRequest& r
         onFinished();
         return;
       }
+      
+      if (cursors.find(vId) != cursors.end() 
+      && !cursors.find(vId)->second.next_cursor_ref().has_value()) {
+        cpp2::ScanCursor c;
+        cursors_.emplace(vId, std::move(c));
+        continue;
+      }
 
       // the first column of each row would be the vertex id
       auto ret = plan.go(partId, vId);
@@ -104,6 +112,8 @@ void GetNeighborsProcessor::runInSingleThread(const cpp2::GetNeighborsRequest& r
           handleErrorCode(ret, spaceId_, partId);
         }
       }
+
+      
     }
   }
   if (UNLIKELY(profileDetailFlag_)) {
@@ -125,9 +135,10 @@ void GetNeighborsProcessor::runInMultipleThread(const cpp2::GetNeighborsRequest&
   }
   size_t i = 0;
   std::vector<folly::Future<std::pair<nebula::cpp2::ErrorCode, PartitionID>>> futures;
+  auto cursors = req.get_cursors();
   for (const auto& [partId, vids] : req.get_parts()) {
     futures.emplace_back(
-        runInExecutor(&contexts_[i], &expCtxs_[i], &results_[i], partId, vids, limit, random));
+        runInExecutor(&contexts_[i], &expCtxs_[i], &results_[i], partId, vids, limit, random, &cursors));
     i++;
   }
 
@@ -170,15 +181,18 @@ folly::Future<std::pair<nebula::cpp2::ErrorCode, PartitionID>> GetNeighborsProce
     PartitionID partId,
     const std::vector<nebula::Value>& vids,
     int64_t limit,
-    bool random) {
+    bool random,
+    std::unordered_map<Value, cpp2::ScanCursor>* cursors) {
   return folly::via(
              executor_,
-             [this, context, expCtx, result, partId, input = std::move(vids), limit, random]() {
+             [this, context, expCtx, result, partId, input = std::move(vids), limit, random, cursors]() {
                memory::MemoryCheckGuard guard;
                if (memoryExceeded_) {
                  return std::make_pair(nebula::cpp2::ErrorCode::E_STORAGE_MEMORY_EXCEEDED, partId);
                }
-               auto plan = buildPlan(context, expCtx, result, limit, random);
+               
+               // TODO add cursors
+               auto plan = buildPlan(context, expCtx, result, cursors, limit, random);
                for (const auto& vid : input) {
                  auto vId = vid.getStr();
 
@@ -208,6 +222,7 @@ folly::Future<std::pair<nebula::cpp2::ErrorCode, PartitionID>> GetNeighborsProce
 StoragePlan<VertexID> GetNeighborsProcessor::buildPlan(RuntimeContext* context,
                                                        StorageExpressionContext* expCtx,
                                                        nebula::DataSet* result,
+                                                       std::unordered_map<Value, cpp2::ScanCursor>* cursors,
                                                        int64_t limit,
                                                        bool random) {
   /*
@@ -249,6 +264,7 @@ StoragePlan<VertexID> GetNeighborsProcessor::buildPlan(RuntimeContext* context,
   std::vector<SingleEdgeNode*> edges;
   for (const auto& ec : edgeContext_.propContexts_) {
     auto edge = std::make_unique<SingleEdgeNode>(context, &edgeContext_, ec.first, &ec.second);
+    edge.get()->setCursors(cursors);
     edges.emplace_back(edge.get());
     plan.addNode(std::move(edge));
   }
@@ -299,10 +315,10 @@ StoragePlan<VertexID> GetNeighborsProcessor::buildPlan(RuntimeContext* context,
   std::unique_ptr<GetNeighborsNode> output;
   if (random) {
     output = std::make_unique<GetNeighborsSampleNode>(
-        context, join, upstream, &edgeContext_, result, limit);
+        context, join, upstream, &edgeContext_, result, &cursors_, limit);
   } else {
     output =
-        std::make_unique<GetNeighborsNode>(context, join, upstream, &edgeContext_, result, limit);
+        std::make_unique<GetNeighborsNode>(context, join, upstream, &edgeContext_, result, &cursors_, limit);
   }
   output->addDependency(upstream);
   plan.addNode(std::move(output));
@@ -490,6 +506,7 @@ nebula::cpp2::ErrorCode GetNeighborsProcessor::handleEdgeStatProps(
 
 void GetNeighborsProcessor::onProcessFinished() {
   resp_.vertices_ref() = std::move(resultDataSet_);
+  resp_.cursors_ref() = std::move(cursors_);
 }
 
 }  // namespace storage

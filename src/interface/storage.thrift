@@ -118,6 +118,15 @@ enum EdgeDirection {
     OUT_EDGE = 3,
 }
 
+/*
+ * End of Index section
+ */
+
+struct ScanCursor {
+    // next start key of scan, only valid when has_next is true
+    1: optional binary                      next_cursor,
+}
+
 
 ///////////////////////////////////////////////////////////
 //
@@ -178,6 +187,9 @@ struct GetNeighborsRequest {
         (cpp.template = "std::unordered_map")   parts,
     4: TraverseSpec                             traverse_spec,
     5: optional RequestCommon                   common,
+    // Id => cursor
+    6: map<common.Value, ScanCursor>
+        (cpp.template = "std::unordered_map")   cursors,
 }
 
 
@@ -235,6 +247,9 @@ struct GetNeighborsResponse {
     //   "_expr:<alias1>:<alias2>:..."
     //
     2: optional common.DataSet vertices,
+        // Id => cursor
+    3: map<common.Value, ScanCursor>
+        (cpp.template = "std::unordered_map")   cursors,
 }
 /*
  * End of GetNeighbors section
@@ -581,15 +596,6 @@ struct LookupAndTraverseRequest {
     3: IndexSpec                            indices,
     4: TraverseSpec                         traverse_spec,
     5: optional RequestCommon               common,
-}
-
-/*
- * End of Index section
- */
-
-struct ScanCursor {
-    // next start key of scan, only valid when has_next is true
-    1: optional binary                      next_cursor,
 }
 
 struct ScanVertexRequest {

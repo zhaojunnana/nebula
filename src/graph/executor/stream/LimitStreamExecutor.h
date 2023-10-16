@@ -25,7 +25,7 @@ class LimitStreamExecutor final : public StreamExecutor {
   }
 
   std::shared_ptr<RoundResult> executeOneRound(
-    std::shared_ptr<DataSet> input, std::string offset) override;
+    std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) override;
  private:
   std::atomic_int64_t counter_ = 0;
   int64_t limit_ = -1;

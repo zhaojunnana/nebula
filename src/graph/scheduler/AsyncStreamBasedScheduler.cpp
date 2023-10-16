@@ -88,7 +88,7 @@ folly::Future<Status> AsyncStreamBasedScheduler::doSchedule(StreamExecutor* root
 
   for (auto leaf : leafExeuctors) {
     leaf->markSubmitTask();
-    submitTask(pool, leaf, nullptr, "");
+    submitTask(pool, leaf, nullptr, {});
   }
   return resultFuture;
 }
@@ -96,7 +96,7 @@ folly::Future<Status> AsyncStreamBasedScheduler::doSchedule(StreamExecutor* root
 void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
                                            StreamExecutor* executor,
                                            std::shared_ptr<DataSet> input,
-                                           std::string offset) const {
+                                           std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) const {
   folly::via(&pool, [&pool, executor, input, offset, this] {
     auto r = executor->executeOneRound(input, offset);
     auto out = r->getOutputData();
@@ -110,14 +110,14 @@ void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
       for (auto successor : executor->successors()) {
         auto next = static_cast<StreamExecutor*>(successor);
         next->markSubmitTask();
-        submitTask(pool, next, out, "");
+        submitTask(pool, next, out, {});
       }
     }
 
     if (!isStopped && r->hasNextRound()) {
       executor->markSubmitTask();
     }
-    executor->markFinishTask(r->hasNextRound());
+    executor->markFinishTask(r->hasNextRound() && !isStopped);
     if (!isStopped && r->hasNextRound()) {
       submitTask(pool, executor, input, r->getOffset());
     }

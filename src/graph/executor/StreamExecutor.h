@@ -17,16 +17,17 @@ class QueryContext;
 class RoundResult {
     public:
      RoundResult() = default;
-     RoundResult(std::shared_ptr<DataSet> out, bool hasNextRound, std::string offset):
+     RoundResult(std::shared_ptr<DataSet> out, bool hasNextRound, 
+     std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset):
        output_(out), hasNextRound_(hasNextRound), offset_(std::move(offset)) {}
      std::shared_ptr<DataSet> getOutputData();
      bool hasNextRound();
-     std::string getOffset();
+     std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> getOffset();
 
     private:
      std::shared_ptr<DataSet> output_{nullptr};
      bool hasNextRound_;
-     std::string offset_;
+     std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset_;
 };
 
 class StreamExecutor : public Executor {
@@ -38,7 +39,7 @@ class StreamExecutor : public Executor {
   folly::Future<Status> execute() override;
 
   virtual std::shared_ptr<RoundResult> executeOneRound(
-    std::shared_ptr<DataSet> input, std::string offset) = 0;
+    std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) = 0;
 
   int32_t markSubmitTask();
 
