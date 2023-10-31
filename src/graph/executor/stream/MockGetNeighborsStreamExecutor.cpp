@@ -1,3 +1,6 @@
+// Copyright (c) 2020 vesoft inc. All rights reserved.
+//
+// This source code is licensed under Apache 2.0 License.
 //
 // Created by admin on 2023/9/7.
 //
@@ -15,7 +18,8 @@ namespace nebula {
 namespace graph {
 
 std::shared_ptr<RoundResult> MockGetNeighborsStreamExecutor::executeOneRound(
-  std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) {
+  std::shared_ptr<DataSet> input,
+  std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) {
   std::vector<Value> vids;
   vids = input.get()->colValues(nebula::kVid);
   if (vids.empty()) {
@@ -36,8 +40,8 @@ std::shared_ptr<RoundResult> MockGetNeighborsStreamExecutor::executeOneRound(
                      std::move(vids),
                      {},
                      storage::cpp2::EdgeDirection::OUT_EDGE,
-                     nullptr,
-                     nullptr,
+                     expand_->statProps(),
+                     expand_->vertexProps(),
                      expand_->edgeProps(),
                      nullptr,
                      false,
@@ -52,7 +56,8 @@ std::shared_ptr<RoundResult> MockGetNeighborsStreamExecutor::executeOneRound(
         SCOPED_TIMER(&execTime_);
         addState("total_rpc_time", getNbrTime);
       })
-      .thenValue([this](nebula::storage::StorageRpcResponse<nebula::storage::cpp2::GetNeighborsResponse>&& resp) {
+      .thenValue([this](
+        nebula::storage::StorageRpcResponse<nebula::storage::cpp2::GetNeighborsResponse>&& resp) {
         memory::MemoryCheckGuard guard;
         SCOPED_TIMER(&execTime_);
         auto& hostLatency = resp.hostLatency();
@@ -79,9 +84,9 @@ std::shared_ptr<RoundResult> MockGetNeighborsStreamExecutor::executeOneRound(
             for (auto row : dataset->rows) {
               ds->rows.emplace_back(std::move(row));
             }
-            
+
             auto cur = result.get_cursors();
-            for(auto it = cur.begin(); it != cur.end(); it++){
+            for (auto it = cur.begin(); it != cur.end(); it++) {
               if (it->second.next_cursor_ref().has_value()) {
                 hasNext = true;
               }
@@ -90,7 +95,7 @@ std::shared_ptr<RoundResult> MockGetNeighborsStreamExecutor::executeOneRound(
             retCursors.insert(result.get_cursors().begin(), result.get_cursors().end());
         }
         return std::make_shared<RoundResult>(ds, hasNext, retCursors);
-        //return roundResult;
+        // return roundResult;
         // return handleResponse(resp);
       }).get();
       return roundResult;
@@ -118,16 +123,15 @@ std::shared_ptr<RoundResult> MockGetNeighborsStreamExecutor::handleResponse(RpcR
     for (auto row : dataset->rows) {
       ds->rows.emplace_back(std::move(row));
     }
-    
+
     auto cur = resp.get_cursors();
-    for(auto it = cur.begin(); it != cur.end(); it++){
+    for (auto it = cur.begin(); it != cur.end(); it++) {
       if (it->second.next_cursor_ref().has_value()) {
         hasNext = true;
       }
     }
 
     retCursors.insert(resp.get_cursors().begin(), resp.get_cursors().end());
-
   }
   return std::make_shared<RoundResult>(ds, hasNext, retCursors);
 }

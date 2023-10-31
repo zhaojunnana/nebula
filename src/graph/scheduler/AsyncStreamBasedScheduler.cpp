@@ -42,6 +42,7 @@ folly::Future<Status> AsyncStreamBasedScheduler::schedule() {
   if (root->kind() != PlanNode::Kind::kProject) {
     return baseScheduler_->schedule();
   }
+  // return baseScheduler_->schedule();
 
   if (FLAGS_enable_lifetime_optimize) {
     // special for root
@@ -96,7 +97,8 @@ folly::Future<Status> AsyncStreamBasedScheduler::doSchedule(StreamExecutor* root
 void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
                                            StreamExecutor* executor,
                                            std::shared_ptr<DataSet> input,
-                                           std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) const {
+                                           std::unordered_map<Value,
+                                            nebula::storage::cpp2::ScanCursor> offset) const {
   folly::via(&pool, [&pool, executor, input, offset, this] {
     auto r = executor->executeOneRound(input, offset);
     auto out = r->getOutputData();

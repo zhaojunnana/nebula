@@ -69,6 +69,11 @@ class IndexScanNode : public IndexNode {
         indexNullable_(hasNullableCol) {}
   ::nebula::cpp2::ErrorCode init(InitContext& ctx) override;
   std::string identify() override;
+  std::tuple<Value, cpp2::ScanCursor> getIterKey() override;
+
+  void setCursors(std::unordered_map<Value, cpp2::ScanCursor>&& cursors) {
+    cursors_ = std::move(cursors);
+  }
 
  protected:
   nebula::cpp2::ErrorCode doExecute(PartitionID partId) final;
@@ -173,6 +178,7 @@ class IndexScanNode : public IndexNode {
   bool needAccessBase_{false};
   bool fatalOnBaseNotFound_{false};
   Map<std::string, size_t> colPosMap_;
+  std::unordered_map<Value, cpp2::ScanCursor> cursors_;
 };
 class QualifiedStrategy {
  public:

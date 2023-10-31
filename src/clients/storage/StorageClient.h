@@ -148,7 +148,9 @@ class StorageClient
       int32_t tagOrEdge,
       const std::vector<std::string>& returnCols,
       std::vector<storage::cpp2::OrderBy> orderBy,
-      int64_t limit);
+      int64_t limit,
+      std::unordered_map<HostAddr,
+        std::unordered_map<Value, cpp2::ScanCursor>> clusterCursors = {});
 
   StorageRpcRespFuture<cpp2::GetNeighborsResponse> lookupAndTraverse(
       const CommonRequestParam& param, cpp2::IndexSpec indexSpec, cpp2::TraverseSpec traverseSpec);

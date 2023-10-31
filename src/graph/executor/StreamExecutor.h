@@ -11,14 +11,16 @@
 
 namespace nebula {
 namespace graph {
+using Offset = std::unordered_map<Value, nebula::storage::cpp2::ScanCursor>;
+
 class PlanNode;
 class QueryContext;
 
 class RoundResult {
     public:
      RoundResult() = default;
-     RoundResult(std::shared_ptr<DataSet> out, bool hasNextRound, 
-     std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset):
+     RoundResult(std::shared_ptr<DataSet> out, bool hasNextRound,
+      std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset):
        output_(out), hasNextRound_(hasNextRound), offset_(std::move(offset)) {}
      std::shared_ptr<DataSet> getOutputData();
      bool hasNextRound();
@@ -39,7 +41,7 @@ class StreamExecutor : public Executor {
   folly::Future<Status> execute() override;
 
   virtual std::shared_ptr<RoundResult> executeOneRound(
-    std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) = 0;
+    std::shared_ptr<DataSet> input, Offset offset) = 0;
 
   int32_t markSubmitTask();
 

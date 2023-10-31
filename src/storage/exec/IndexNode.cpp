@@ -5,6 +5,7 @@
 
 #include "storage/exec/IndexNode.h"
 
+#include "common/datatypes/Value.h"
 #include "folly/Likely.h"
 namespace nebula {
 namespace storage {
@@ -24,6 +25,11 @@ nebula::cpp2::ErrorCode IndexNode::doExecute(PartitionID partId) {
     }
   }
   return ::nebula::cpp2::ErrorCode::SUCCEEDED;
+}
+
+std::tuple<Value, cpp2::ScanCursor> IndexNode::getIterKey() {
+  cpp2::ScanCursor nullCursor;
+  return {Value::null(), nullCursor};
 }
 
 }  // namespace storage

@@ -532,6 +532,9 @@ struct LookupIndexResp {
     2: optional common.DataSet          data,
     // stat_data only have one column, the column name is the order in LookupIndexRequest.stat_prop
     3: optional common.DataSet          stat_data,
+    // cursors <index-partId, cursor>
+    4: map<common.Value, ScanCursor>
+        (cpp.template = "std::unordered_map")   cursors,
 }
 
 enum ScanType {
@@ -584,6 +587,9 @@ struct LookupIndexRequest {
     6: optional i64                         limit,
     7: optional list<OrderBy>               order_by,
     8: optional list<StatProp>              stat_columns,
+    // indexId-partId => cursor
+    9: map<common.Value, ScanCursor>
+        (cpp.template = "std::unordered_map")   cursors,
 }
 
 

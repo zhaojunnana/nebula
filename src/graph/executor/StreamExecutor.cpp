@@ -8,13 +8,17 @@
 #include <memory>
 #include <utility>
 #include "common/base/Status.h"
+#include "graph/executor/stream/AppendVerticesStreamExecutor.h"
+#include "graph/executor/stream/IndexScanStreamExecutor.h"
 #include "graph/executor/stream/MockGetNeighborsStreamExecutor.h"
 #include "graph/executor/stream/LimitStreamExecutor.h"
 #include "graph/executor/stream/MockStartStreamExecutor.h"
 #include "graph/executor/stream/MockTransportStreamExecutor.h"
 #include "graph/executor/stream/LimitStreamExecutor.h"
 #include "graph/executor/stream/StreamCollectExecutor.h"
+#include "graph/executor/stream/TraverseStreamExecutor.h"
 #include "graph/planner/plan/PlanNode.h"
+#include "graph/planner/plan/Query.h"
 
 namespace nebula {
 namespace graph {
@@ -69,27 +73,30 @@ StreamExecutor *StreamExecutor::makeStreamExecutor(QueryContext *qctx, const Pla
     case PlanNode::Kind::kStart: {
         return pool->makeAndAdd<MockStartStreamExecutor>(node, qctx);
     }
-    case PlanNode::Kind::kIndexScan:
+    case PlanNode::Kind::kIndexScan: {
+      return pool->makeAndAdd<IndexScanStreamExecutor>(node, qctx);
+    }
     case PlanNode::Kind::kEdgeIndexFullScan:
     case PlanNode::Kind::kEdgeIndexPrefixScan:
     case PlanNode::Kind::kEdgeIndexRangeScan:
     case PlanNode::Kind::kTagIndexFullScan:
     case PlanNode::Kind::kTagIndexPrefixScan:
     case PlanNode::Kind::kTagIndexRangeScan:
-    case PlanNode::Kind::kTraverse:{
+    case PlanNode::Kind::kExpandAll:
+    case PlanNode::Kind::kFilter: {
       return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kAppendVertices: {
+      return pool->makeAndAdd<AppendVerticesStreamExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kTraverse: {
+      return pool->makeAndAdd<TraverseStreamExecutor>(node, qctx);
     }
     case PlanNode::Kind::kExpand: {
       return pool->makeAndAdd<MockGetNeighborsStreamExecutor>(node, qctx);
     }
-    case PlanNode::Kind::kAppendVertices: {
-      return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
-    }
     case PlanNode::Kind::kLimit: {
       return pool->makeAndAdd<LimitStreamExecutor>(node, qctx);
-    }
-    case PlanNode::Kind::kExpandAll:{
-      return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
     }
     case PlanNode::Kind::kProject: {
       return pool->makeAndAdd<StreamCollectExecutor>(node, qctx);

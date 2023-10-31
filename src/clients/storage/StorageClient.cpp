@@ -518,7 +518,8 @@ StorageRpcRespFuture<cpp2::LookupIndexResp> StorageClient::lookupIndex(
     int32_t tagOrEdge,
     const std::vector<std::string>& returnCols,
     std::vector<storage::cpp2::OrderBy> orderBy,
-    int64_t limit) {
+    int64_t limit,
+    std::unordered_map<HostAddr, std::unordered_map<Value, cpp2::ScanCursor>> clusterCursors) {
   // TODO(sky) : instead of isEdge and tagOrEdge to nebula::cpp2::SchemaID for graph layer.
   auto space = param.space;
   auto status = getHostParts(space);
@@ -550,6 +551,10 @@ StorageRpcRespFuture<cpp2::LookupIndexResp> StorageClient::lookupIndex(
     req.common_ref() = common;
     req.limit_ref() = limit;
     req.order_by_ref() = orderBy;
+
+    if (clusterCursors.find(host) != clusterCursors.end()) {
+      req.cursors_ref() = clusterCursors[host];
+    }
   }
 
   return collectResponse(param.evb,

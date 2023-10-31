@@ -3,6 +3,7 @@
  * This source code is licensed under Apache 2.0 License.
  */
 #include "storage/exec/IndexScanNode.h"
+#include <string>
 
 namespace nebula {
 namespace storage {
@@ -487,12 +488,30 @@ bool IndexScanNode::checkTTL() {
 nebula::cpp2::ErrorCode IndexScanNode::resetIter(PartitionID partId) {
   path_->resetPart(partId);
   nebula::cpp2::ErrorCode ret = nebula::cpp2::ErrorCode::SUCCEEDED;
-  if (path_->isRange()) {
-    auto rangePath = dynamic_cast<RangePath*>(path_.get());
-    kvstore_->range(spaceId_, partId, rangePath->getStartKey(), rangePath->getEndKey(), &iter_);
+  if (cursors_.empty()) {
+    if (path_->isRange()) {
+      auto rangePath = dynamic_cast<RangePath*>(path_.get());
+      kvstore_->range(spaceId_, partId, rangePath->getStartKey(), rangePath->getEndKey(), &iter_);
+    } else {
+      auto prefixPath = dynamic_cast<PrefixPath*>(path_.get());
+      ret = kvstore_->prefix(spaceId_, partId, prefixPath->getPrefixKey(), &iter_);
+    }
   } else {
-    auto prefixPath = dynamic_cast<PrefixPath*>(path_.get());
-    ret = kvstore_->prefix(spaceId_, partId, prefixPath->getPrefixKey(), &iter_);
+    Value key = Value(std::to_string(indexId_)+"-"+std::to_string(partId_));
+    auto it = cursors_.find(key);
+    if (it != cursors_.end()) {
+      auto cursor = it->second.next_cursor_ref().value();
+      if (path_->isRange()) {
+        auto rangePath = dynamic_cast<RangePath*>(path_.get());
+        kvstore_->range(spaceId_, partId, cursor, rangePath->getEndKey(), &iter_);
+      } else {
+        auto prefixPath = dynamic_cast<PrefixPath*>(path_.get());
+        ret = kvstore_->rangeWithPrefix(spaceId_, partId, cursor,
+         prefixPath->getPrefixKey(), &iter_, false);
+      }
+    } else {
+      // empty iter_
+    }
   }
   return ret;
 }
@@ -560,6 +579,15 @@ void IndexScanNode::decodePropFromIndex(folly::StringPiece key,
 
 std::string IndexScanNode::identify() {
   return fmt::format("{}(IndexID={}, Path=({}))", name_, indexId_, path_->toString());
+}
+
+std::tuple<Value, cpp2::ScanCursor> IndexScanNode::getIterKey() {
+  Value key = Value(std::to_string(indexId_)+"-"+std::to_string(partId_));
+  cpp2::ScanCursor c;
+  if (iter_ && iter_->valid()) {
+    c.next_cursor_ref() = iter_->key().toString();
+  }
+  return {key, c};
 }
 
 // End of IndexScan

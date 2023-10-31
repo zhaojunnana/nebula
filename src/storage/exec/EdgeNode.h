@@ -227,8 +227,8 @@ class SingleEdgeNode final : public EdgeNode<VertexID> {
     std::unique_ptr<kvstore::KVIterator> iter;
     prefix_ = NebulaKeyUtils::edgePrefix(context_->vIdLen(), partId, vId, edgeType_);
 
-    auto it = cursors_->find(vId);
-    if (it != cursors_->end()) {
+    auto it = cursors_.find(vId);
+    if (it != cursors_.end()) {
       auto cursor = it->second.next_cursor_ref().value();
       ret = context_->env()->kvstore_->rangeWithPrefix(
           context_->spaceId(), partId, cursor, prefix_, &iter, false);
@@ -247,14 +247,14 @@ class SingleEdgeNode final : public EdgeNode<VertexID> {
     return ret;
   }
 
-  void setCursors(std::unordered_map<Value, cpp2::ScanCursor>* cursors) {
-    cursors_ = cursors;
+  void setCursors(std::unordered_map<Value, cpp2::ScanCursor>&& cursors) {
+    cursors_ = std::move(cursors);
   }
 
  private:
   std::unique_ptr<SingleEdgeIterator> iter_;
   std::string prefix_;
-  std::unordered_map<Value, cpp2::ScanCursor>* cursors_;
+  std::unordered_map<Value, cpp2::ScanCursor> cursors_;
 };
 
 }  // namespace storage

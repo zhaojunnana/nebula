@@ -6,6 +6,7 @@
 
 #include <thrift/lib/cpp2/protocol/JSONProtocol.h>
 #include <thrift/lib/cpp2/protocol/Serializer.h>
+#include <algorithm>
 
 #include "common/memory/MemoryTracker.h"
 #include "folly/Likely.h"
@@ -119,7 +120,7 @@ ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> LookupProcessor::bu
     const cpp2::LookupIndexRequest& req) {
   std::vector<std::unique_ptr<IndexNode>> nodes;
   for (auto& ctx : req.get_indices().get_contexts()) {
-    auto scan = buildOneContext(ctx);
+    auto scan = buildOneContext(ctx, req);
     if (!ok(scan)) {
       return error(scan);
     }
@@ -171,7 +172,7 @@ ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> LookupProcessor::bu
 }
 
 ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> LookupProcessor::buildOneContext(
-    const cpp2::IndexQueryContext& ctx) {
+    const cpp2::IndexQueryContext& ctx, const cpp2::LookupIndexRequest& req) {
   std::unique_ptr<IndexNode> node;
   DLOG(INFO) << ctx.get_column_hints().size();
   DLOG(INFO) << &ctx.get_column_hints();
@@ -207,6 +208,10 @@ ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> LookupProcessor::bu
                                                  context_->env()->kvstore_,
                                                  hasNullableCol);
   }
+
+  std::unordered_map<Value, cpp2::ScanCursor> cursorsCopy(req.get_cursors());
+  dynamic_cast<IndexScanNode*>(node.get())->setCursors(std::move(cursorsCopy));
+
   if (ctx.filter_ref().is_set() && !ctx.get_filter().empty()) {
     auto expr = Expression::decode(context_->objPool(), *ctx.filter_ref());
     auto filterNode = std::make_unique<IndexSelectionNode>(context_.get(), expr);
@@ -241,6 +246,24 @@ void LookupProcessor::runInSingleThread(const std::vector<PartitionID>& parts,
     } while (true);
     datasetList.emplace_back(std::move(dataset));
     codeList.emplace_back(code);
+    // find upstream iter cursor str.
+    std::queue<IndexNode*> nodeQueue;
+    nodeQueue.push(plan.get());
+    while (!nodeQueue.empty()) {
+     auto currentNode = nodeQueue.front();
+     nodeQueue.pop();
+     if (currentNode->children().empty()) {
+       // get cursor merge to cursors
+       auto [key, cursor] = currentNode->getIterKey();
+       if (!key.isNull()) {
+         mergedCursors_.emplace(key, cursor);
+       }
+     } else {
+       for (auto& child : currentNode->children()) {
+         nodeQueue.push(child.get());
+       }
+     }
+    }
   }
   if (statTypes_.size() > 0) {
     auto indexAgg = dynamic_cast<IndexAggregateNode*>(plan.get());
@@ -268,7 +291,8 @@ void LookupProcessor::runInMultipleThread(const std::vector<PartitionID>& parts,
                                           std::unique_ptr<IndexNode> plan) {
   memory::MemoryCheckOffGuard offGuard;
   std::vector<std::unique_ptr<IndexNode>> planCopy = reproducePlan(plan.get(), parts.size());
-  using ReturnType = std::tuple<PartitionID, ::nebula::cpp2::ErrorCode, std::deque<Row>, Row>;
+  using ReturnType = std::tuple<PartitionID, ::nebula::cpp2::ErrorCode, std::deque<Row>, Row,
+    std::unordered_map<Value, cpp2::ScanCursor>>;
   std::vector<folly::Future<ReturnType>> futures;
   for (size_t i = 0; i < parts.size(); i++) {
     futures.emplace_back(
@@ -293,17 +317,39 @@ void LookupProcessor::runInMultipleThread(const std::vector<PartitionID>& parts,
                      if (UNLIKELY(profileDetailFlag_)) {
                        profilePlan(plan.get());
                      }
+
+                     // find upstream iter cursor str.
+                     std::queue<IndexNode*> nodeQueue;
+                     std::unordered_map<Value, cpp2::ScanCursor> cursors;
+                     nodeQueue.push(plan.get());
+                     while (!nodeQueue.empty()) {
+                      auto currentNode = nodeQueue.front();
+                      nodeQueue.pop();
+                      if (currentNode->children().empty()) {
+                        // get cursor merge to cursors
+                        auto [key, cursor] = currentNode->getIterKey();
+                        if (!key.isNull()) {
+                          cursors.emplace(key, cursor);
+                        }
+                      } else {
+                        for (auto& child : currentNode->children()) {
+                          nodeQueue.push(child.get());
+                        }
+                      }
+                     }
+
                      Row statResult;
                      if (code == nebula::cpp2::ErrorCode::SUCCEEDED && statTypes_.size() > 0) {
                        auto indexAgg = dynamic_cast<IndexAggregateNode*>(plan.get());
                        statResult = indexAgg->calculateStats();
                      }
-                     return {part, code, dataset, statResult};
+                     return {part, code, dataset, statResult, cursors};
                    })
             .thenError(folly::tag_t<std::bad_alloc>{}, [this](const std::bad_alloc&) {
               memoryExceeded_ = true;
               return folly::makeFuture<
-                  std::tuple<PartitionID, ::nebula::cpp2::ErrorCode, std::deque<Row>, Row>>(
+                  std::tuple<PartitionID, ::nebula::cpp2::ErrorCode, std::deque<Row>, Row,
+                    std::unordered_map<Value, cpp2::ScanCursor>>>(
                   std::runtime_error("Memory Limit Exceeded, " +
                                      memory::MemoryStats::instance().toString()));
             }));
@@ -320,7 +366,7 @@ void LookupProcessor::runInMultipleThread(const std::vector<PartitionID>& parts,
             onError();
             return;
           }
-          auto& [partId, code, dataset, statResult] = tries[j].value();
+          auto& [partId, code, dataset, statResult, cursors] = tries[j].value();
           if (code == ::nebula::cpp2::ErrorCode::SUCCEEDED) {
             for (auto& row : dataset) {
               resultDataSet_.emplace_back(std::move(row));
@@ -329,6 +375,9 @@ void LookupProcessor::runInMultipleThread(const std::vector<PartitionID>& parts,
             handleErrorCode(code, context_->spaceId(), partId);
           }
           statResults.emplace_back(std::move(statResult));
+          for (auto& cur : cursors) {
+            mergedCursors_.emplace(cur.first, cur.second);
+          }
         }
         DLOG(INFO) << "finish";
         // IndexAggregateNode has been copied and each part get it's own aggregate info,
