@@ -8,8 +8,7 @@ namespace nebula {
 namespace graph {
 
 std::shared_ptr<RoundResult> StreamCollectExecutor::executeOneRound(
-  std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) {
-    std::cout << "input: " << input << std::endl;
+  std::shared_ptr<DataSet> input, Offset offset) {
     DLOG(INFO) << "StreamCollectExecutor executeOneRound.";
     std::lock_guard<std::mutex> lock(mutex_);
     finalDataSet_.append(std::move(*input));
@@ -21,7 +20,11 @@ void StreamCollectExecutor::markFinishExecutor() {
     DLOG(INFO) << "StreamCollectExecutor markFinishExecutor.";
     auto status = finish(ResultBuilder().value(Value(std::move(finalDataSet_))).build());
     if (rootPromiseHasBeenSet_) {
-        rootPromise_.setValue(status);
+        if (abnormalStatus_ != nullptr && !abnormalStatus_->ok()) {
+            rootPromise_.setValue(std::move(*abnormalStatus_));
+        } else {
+            rootPromise_.setValue(status);
+        }
     }
 }
 

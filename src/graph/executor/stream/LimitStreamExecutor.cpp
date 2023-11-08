@@ -8,8 +8,8 @@ namespace nebula {
 namespace graph {
 
 std::shared_ptr<RoundResult> LimitStreamExecutor::executeOneRound(
-  std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) {
-    std::cout << "input: " << input << std::endl;
+  std::shared_ptr<DataSet> input, Offset offset) {
+    UNUSED(offset);
     auto ds = std::make_shared<nebula::DataSet>();
     ds->colNames = input->colNames;
     for (auto row : input->rows) {

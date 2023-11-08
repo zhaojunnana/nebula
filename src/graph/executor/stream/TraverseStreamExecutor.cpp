@@ -32,9 +32,12 @@ std::shared_ptr<RoundResult> TraverseStreamExecutor::executeOneRound(
 
   TraverseRoundContext roundCtx;
   auto status = buildRequestVids(input.get(), roundCtx);
-  if (!status.ok() || roundCtx.vids_.empty()) {
-    DataSet emptyDs;
+  if (!status.ok()) {
+    *abnormalStatus_ = std::move(status);
     return std::make_shared<RoundResult>(nullptr, false, Offset());
+  } else if (roundCtx.vids_.empty()) {
+    DataSet emptyDs;
+    return std::make_shared<RoundResult>(std::make_shared<DataSet>(emptyDs), false, Offset());
   }
 
   auto resultStatus = getNeighbors(offset, roundCtx).get();
@@ -44,8 +47,10 @@ std::shared_ptr<RoundResult> TraverseStreamExecutor::executeOneRound(
         roundCtx.hasNext_,
         roundCtx.retCursors_);
     return roundResult;
+  } else {
+    *abnormalStatus_ = std::move(resultStatus);
+    return std::make_shared<RoundResult>(nullptr, false, Offset());
   }
-  return std::make_shared<RoundResult>(nullptr, false, Offset());
 }
 
 Status TraverseStreamExecutor::buildRequestVids(DataSet* input, TraverseRoundContext& roundCtx) {
@@ -57,7 +62,7 @@ Status TraverseStreamExecutor::buildRequestVids(DataSet* input, TraverseRoundCon
   auto iter = static_cast<SequentialIter*>(inputIter.get());
   size_t iterSize = iter->size();
   roundCtx.vids_.reserve(iterSize);
-  auto* src = traverse_->src();
+  auto src = traverse_->src()->clone();
   QueryExpressionContext ctx(ectx_);
 
   bool mv = movable(traverse_->inputVars().front());
@@ -119,7 +124,7 @@ folly::Future<Status> TraverseStreamExecutor::getNeighbors(
                      finalStep ? traverse_->random() : false,
                      finalStep ? traverse_->orderBy() : std::vector<storage::cpp2::OrderBy>(),
                     //  finalStep ? traverse_->limit(qctx()) : -1,
-                     1,
+                     getBatchSize(),
                      selectFilter(roundCtx),
                      roundCtx.currentStep_ == 1 ? traverse_->tagFilter() : nullptr,
                      offset)
@@ -357,8 +362,8 @@ void TraverseStreamExecutor::expand(GetNeighborsIter* iter, TraverseRoundContext
   if (iter->numRows() == 0) {
     return;
   }
-  auto* vFilter = traverse_->vFilter();
-  auto* eFilter = traverse_->eFilter();
+  auto* vFilter = traverse_->vFilter()->clone();
+  auto* eFilter = traverse_->eFilter()->clone();
   QueryExpressionContext ctx(ectx_);
 
   Value curVertex;

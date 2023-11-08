@@ -18,7 +18,6 @@ namespace graph {
 
 std::shared_ptr<RoundResult> AppendVerticesStreamExecutor::executeOneRound(
   std::shared_ptr<DataSet> input, Offset offset) {
-  std::cout << &offset << std::endl;
   auto inputResult = ResultBuilder().value(Value(*input))
     .iter(Iterator::Kind::kProp).build();
   AppendVerticesRoundContext roundCtx;
@@ -27,10 +26,12 @@ std::shared_ptr<RoundResult> AppendVerticesStreamExecutor::executeOneRound(
     auto roundResult = std::make_shared<RoundResult>(
         std::make_shared<DataSet>(std::move(roundCtx.result_)),
         false,
-        Offset());
+        offset);
     return roundResult;
+  } else {
+    *abnormalStatus_ = std::move(resultStatus);
+    return std::make_shared<RoundResult>(nullptr, false, offset);
   }
-  return std::make_shared<RoundResult>(nullptr, false, Offset());
 }
 
 StatusOr<DataSet> AppendVerticesStreamExecutor::buildRequestDataSet(
@@ -40,7 +41,7 @@ StatusOr<DataSet> AppendVerticesStreamExecutor::buildRequestDataSet(
   }
   // auto valueIter = ectx_->getResult(av->inputVar()).iter();
   auto valueIter = input.iter();
-  return buildRequestDataSetByVidType(valueIter.get(), av->src(), av->dedup(), true);
+  return buildRequestDataSetByVidType(valueIter.get(), av->src()->clone(), av->dedup(), true);
 }
 
 folly::Future<Status> AppendVerticesStreamExecutor::appendVertices(
@@ -96,7 +97,7 @@ Status AppendVerticesStreamExecutor::handleNullProp(const AppendVertices *av, Re
   AppendVerticesRoundContext& roundCtx) {
   // auto iter = ectx_->getResult(av->inputVar()).iter();
   auto iter = input.iter();
-  auto *src = av->src();
+  auto *src = av->src()->clone();
 
   auto size = iter->size();
   DataSet ds;
@@ -136,7 +137,7 @@ Status AppendVerticesStreamExecutor::handleResp(
   // auto state = std::move(result).value();
   std::unordered_map<Value, Value> map;
   auto *av = asNode<AppendVertices>(node());
-  auto *vFilter = av->vFilter();
+  auto *vFilter = av->vFilter() ? av->vFilter()->clone() : nullptr;
   QueryExpressionContext ctx(qctx()->ectx());
 
   // auto inputIter = qctx()->ectx()->getResult(av->inputVar()).iter();
@@ -171,7 +172,7 @@ Status AppendVerticesStreamExecutor::handleResp(
     return Status::OK();
   }
 
-  auto *src = av->src();
+  auto *src = av->src()->clone();
   bool mv = movable(av->inputVars().front());
   for (; inputIter->valid(); inputIter->next()) {
     auto dstFound = map.find(src->eval(ctx(inputIter.get())));

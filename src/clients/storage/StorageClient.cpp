@@ -75,7 +75,8 @@ StorageRpcRespFuture<cpp2::GetNeighborsResponse> StorageClient::getNeighbors(
     req.column_names_ref() = colNames;
     req.parts_ref() = std::move(c.second);
     req.common_ref() = common;
-    req.cursors_ref() = std::move(cursors);
+    std::unordered_map<Value, cpp2::ScanCursor> cursorsCopy(cursors);
+    req.cursors_ref() = std::move(cursorsCopy);
     cpp2::TraverseSpec spec;
     spec.edge_types_ref() = edgeTypes;
     spec.edge_direction_ref() = edgeDirection;

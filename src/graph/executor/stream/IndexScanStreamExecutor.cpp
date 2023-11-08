@@ -22,13 +22,15 @@ namespace graph {
 
 std::shared_ptr<RoundResult> IndexScanStreamExecutor::executeOneRound(
   std::shared_ptr<DataSet> input, Offset offset) {
-  std::cout << "input: " << input << std::endl;
+  UNUSED(input);
   auto statusOrResult = indexScan(offset).get();
   if (statusOrResult.ok()) {
     auto roundResult = statusOrResult.value();
     return roundResult;
+  } else {
+    *abnormalStatus_ = statusOrResult.status();
+    return std::make_shared<RoundResult>(nullptr, false, Offset());
   }
-  return std::make_shared<RoundResult>(nullptr, false, Offset());
 }
 
 folly::Future<StatusOr<std::shared_ptr<RoundResult>>> IndexScanStreamExecutor::indexScan(
@@ -95,7 +97,7 @@ folly::Future<StatusOr<std::shared_ptr<RoundResult>>> IndexScanStreamExecutor::i
                     lookup->schemaId(),
                     lookup->returnColumns(),
                     lookup->orderBy(),
-                    1,
+                    getBatchSize(),
                     transToClusterCursors(offset))
       .via(runner())
       .thenValue([this](StorageRpcResponse<LookupIndexResp> &&rpcResp) {
@@ -182,7 +184,7 @@ StatusOr<std::shared_ptr<RoundResult>> IndexScanStreamExecutor::handleResp(
     DCHECK_EQ(node()->colNames().size(), v.colNames.size());
     v.colNames = node()->colNames();
   }
-  std::cout << "state: " << &state << std::endl;
+  UNUSED(state);
 
   // build round result
   return std::make_shared<RoundResult>(std::make_shared<DataSet>(v), hasNext, offset);

@@ -8,6 +8,8 @@ nebula_add_library(
     StreamExecutor.cpp
     StorageAccessExecutor.cpp
     StorageAccessStreamExecutor.cpp
+    stream/FilterStreamExecutor.cpp
+    stream/ProjectStreamExecutor.cpp
     stream/AppendVerticesStreamExecutor.cpp
     stream/TraverseStreamExecutor.cpp
     stream/IndexScanStreamExecutor.cpp
