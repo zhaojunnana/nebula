@@ -56,7 +56,7 @@ class AsyncStreamBasedScheduler final : public Scheduler {
   QueryContext* qctx_{nullptr};
 };
 
-static std::string buildPatterString(std::vector<PlanNode::Kind> pattern) {
+static std::string buildPatternString(std::vector<PlanNode::Kind> pattern) {
   std::string str = "";
   for (size_t i = 0; i < pattern.size(); i++) {
     if (i > 0) {
@@ -70,7 +70,15 @@ static std::string buildPatterString(std::vector<PlanNode::Kind> pattern) {
 
 static std::unordered_set<std::string> initStreamPatterns() {
   std::unordered_set<std::string> streamPatterns;
-  streamPatterns.insert(buildPatterString({
+  streamPatterns.insert(buildPatternString({
+    PlanNode::Kind::kProject,
+    PlanNode::Kind::kLimit,
+    PlanNode::Kind::kAppendVertices,
+    PlanNode::Kind::kTraverse,
+    PlanNode::Kind::kIndexScan,
+    PlanNode::Kind::kStart
+    }));
+  streamPatterns.insert(buildPatternString({
     PlanNode::Kind::kProject,
     PlanNode::Kind::kLimit,
     PlanNode::Kind::kFilter,
@@ -79,28 +87,41 @@ static std::unordered_set<std::string> initStreamPatterns() {
     PlanNode::Kind::kIndexScan,
     PlanNode::Kind::kStart
     }));
-  streamPatterns.insert(buildPatterString({
-    PlanNode::Kind::kProject,
-    PlanNode::Kind::kLimit,
-    PlanNode::Kind::kAppendVertices,
-    PlanNode::Kind::kTraverse,
-    PlanNode::Kind::kIndexScan,
-    PlanNode::Kind::kStart
-    }));
-  streamPatterns.insert(buildPatterString({
-    PlanNode::Kind::kProject,
-    PlanNode::Kind::kLimit,
-    PlanNode::Kind::kAppendVertices,
-    PlanNode::Kind::kTraverse,
-    PlanNode::Kind::kTraverse,
-    PlanNode::Kind::kIndexScan,
-    PlanNode::Kind::kStart
-    }));
-  streamPatterns.insert(buildPatterString({
+  streamPatterns.insert(buildPatternString({
     PlanNode::Kind::kProject,
     PlanNode::Kind::kLimit,
     PlanNode::Kind::kFilter,
     PlanNode::Kind::kAppendVertices,
+    PlanNode::Kind::kFilter,
+    PlanNode::Kind::kTraverse,
+    PlanNode::Kind::kIndexScan,
+    PlanNode::Kind::kStart
+    }));
+  streamPatterns.insert(buildPatternString({
+    PlanNode::Kind::kProject,
+    PlanNode::Kind::kLimit,
+    PlanNode::Kind::kAppendVertices,
+    PlanNode::Kind::kTraverse,
+    PlanNode::Kind::kTraverse,
+    PlanNode::Kind::kIndexScan,
+    PlanNode::Kind::kStart
+    }));
+  streamPatterns.insert(buildPatternString({
+    PlanNode::Kind::kProject,
+    PlanNode::Kind::kLimit,
+    PlanNode::Kind::kFilter,
+    PlanNode::Kind::kAppendVertices,
+    PlanNode::Kind::kTraverse,
+    PlanNode::Kind::kTraverse,
+    PlanNode::Kind::kIndexScan,
+    PlanNode::Kind::kStart
+    }));
+  streamPatterns.insert(buildPatternString({
+    PlanNode::Kind::kProject,
+    PlanNode::Kind::kLimit,
+    PlanNode::Kind::kFilter,
+    PlanNode::Kind::kAppendVertices,
+    PlanNode::Kind::kFilter,
     PlanNode::Kind::kTraverse,
     PlanNode::Kind::kTraverse,
     PlanNode::Kind::kIndexScan,

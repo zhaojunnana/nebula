@@ -46,7 +46,7 @@ folly::Future<Status> AsyncStreamBasedScheduler::schedule() {
   }
   std::vector<PlanNode::Kind> pattern;
   buildPlanPattern(root, pattern);
-  auto patternStr = buildPatterString(pattern);
+  auto patternStr = buildPatternString(pattern);
   if (STREAM_PATTERNS.find(patternStr) == STREAM_PATTERNS.end()) {
     return baseScheduler_->schedule();
   }
