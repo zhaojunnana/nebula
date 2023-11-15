@@ -147,7 +147,11 @@ int32_t StreamExecutor::markFinishTask(bool hasNextRound) {
         for (auto next : successors_) {
           static_cast<StreamExecutor*>(next)->markSubmitTask();
         }
-        this->markFinishExecutor();
+        // make sure the markup is only executed once
+        auto oldFlag = finishFlag_.exchange(true);
+        if (!oldFlag) {
+          this->markFinishExecutor();
+        }
         // flush once
         for (auto next : successors_) {
           static_cast<StreamExecutor*>(next)->markFinishTask(false);

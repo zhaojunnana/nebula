@@ -23,7 +23,7 @@ void StreamCollectExecutor::markFinishExecutor() {
         if (abnormalStatus_ != nullptr && !abnormalStatus_->ok()) {
             rootPromise_.setValue(std::move(*abnormalStatus_));
         } else {
-            rootPromise_.setValue(status);
+            rootPromise_.setValue(std::move(status));
         }
     }
 }

@@ -80,6 +80,7 @@ class StreamExecutor : public Executor {
   std::atomic_int32_t taskCount_ = 0;
   std::atomic_int32_t upStreamFinishCount_ = 0;
   std::atomic_bool stopFlag_ = std::atomic_bool(false);
+  std::atomic_bool finishFlag_ = std::atomic_bool(false);
 };
 
 }  // namespace graph
