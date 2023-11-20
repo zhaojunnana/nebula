@@ -206,6 +206,13 @@ folly::Future<std::pair<nebula::cpp2::ErrorCode, PartitionID>> GetNeighborsProce
                    return std::make_pair(nebula::cpp2::ErrorCode::E_INVALID_VID, partId);
                  }
 
+                 if (cursorsCopy.find(vId) != cursorsCopy.end()
+                   && !cursorsCopy.find(vId)->second.next_cursor_ref().has_value()) {
+                  cpp2::ScanCursor c;
+                  cursors_.emplace(vId, std::move(c));
+                  continue;
+                 }
+
                  // the first column of each row would be the vertex id
                  auto ret = plan.go(partId, vId);
                  if (ret != nebula::cpp2::ErrorCode::SUCCEEDED) {
