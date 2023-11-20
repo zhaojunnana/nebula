@@ -119,8 +119,9 @@ void LookupProcessor::doProcess(const cpp2::LookupIndexRequest& req) {
 ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> LookupProcessor::buildPlan(
     const cpp2::LookupIndexRequest& req) {
   std::vector<std::unique_ptr<IndexNode>> nodes;
+  size_t ctxIdx = 0;
   for (auto& ctx : req.get_indices().get_contexts()) {
-    auto scan = buildOneContext(ctx, req);
+    auto scan = buildOneContext(ctxIdx++, ctx, req);
     if (!ok(scan)) {
       return error(scan);
     }
@@ -172,7 +173,7 @@ ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> LookupProcessor::bu
 }
 
 ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> LookupProcessor::buildOneContext(
-    const cpp2::IndexQueryContext& ctx, const cpp2::LookupIndexRequest& req) {
+    size_t ctxItx, const cpp2::IndexQueryContext& ctx, const cpp2::LookupIndexRequest& req) {
   std::unique_ptr<IndexNode> node;
   DLOG(INFO) << ctx.get_column_hints().size();
   DLOG(INFO) << &ctx.get_column_hints();
@@ -210,7 +211,7 @@ ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> LookupProcessor::bu
   }
 
   std::unordered_map<Value, cpp2::ScanCursor> cursorsCopy(req.get_cursors());
-  dynamic_cast<IndexScanNode*>(node.get())->setCursors(std::move(cursorsCopy));
+  dynamic_cast<IndexScanNode*>(node.get())->setCursors(ctxItx, std::move(cursorsCopy));
 
   if (ctx.filter_ref().is_set() && !ctx.get_filter().empty()) {
     auto expr = Expression::decode(context_->objPool(), *ctx.filter_ref());

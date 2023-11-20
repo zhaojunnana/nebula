@@ -497,7 +497,7 @@ nebula::cpp2::ErrorCode IndexScanNode::resetIter(PartitionID partId) {
       ret = kvstore_->prefix(spaceId_, partId, prefixPath->getPrefixKey(), &iter_);
     }
   } else {
-    Value key = Value(std::to_string(indexId_)+"-"+std::to_string(partId_));
+    Value key = Value(std::to_string(ctxIdx_)+"-"+std::to_string(partId_));
     auto it = cursors_.find(key);
     if (it != cursors_.end()) {
       auto cursor = it->second.next_cursor_ref().value();
@@ -582,7 +582,7 @@ std::string IndexScanNode::identify() {
 }
 
 std::tuple<Value, cpp2::ScanCursor> IndexScanNode::getIterKey() {
-  Value key = Value(std::to_string(indexId_)+"-"+std::to_string(partId_));
+  Value key = Value(std::to_string(ctxIdx_)+"-"+std::to_string(partId_));
   cpp2::ScanCursor c;
   if (iter_ && iter_->valid()) {
     c.next_cursor_ref() = iter_->key().toString();

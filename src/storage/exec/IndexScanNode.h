@@ -6,6 +6,7 @@
 #define STORAGE_EXEC_INDEXSCANNODE_H
 #include <gtest/gtest_prod.h>
 
+#include <cstddef>
 #include <cstring>
 #include <functional>
 
@@ -71,7 +72,8 @@ class IndexScanNode : public IndexNode {
   std::string identify() override;
   std::tuple<Value, cpp2::ScanCursor> getIterKey() override;
 
-  void setCursors(std::unordered_map<Value, cpp2::ScanCursor>&& cursors) {
+  void setCursors(size_t ctxIdx, std::unordered_map<Value, cpp2::ScanCursor>&& cursors) {
+    ctxIdx_ = ctxIdx;
     cursors_ = std::move(cursors);
   }
 
@@ -178,6 +180,7 @@ class IndexScanNode : public IndexNode {
   bool needAccessBase_{false};
   bool fatalOnBaseNotFound_{false};
   Map<std::string, size_t> colPosMap_;
+  size_t ctxIdx_ = -1;
   std::unordered_map<Value, cpp2::ScanCursor> cursors_;
 };
 class QualifiedStrategy {

@@ -146,7 +146,7 @@ IndexEdgeScanNode::getSchema() {
 std::unique_ptr<IndexNode> IndexEdgeScanNode::copy() {
   std::unordered_map<Value, cpp2::ScanCursor> cursorsCopy(this->cursors_);
   auto copyNode = std::make_unique<IndexEdgeScanNode>(*this);
-  copyNode->setCursors(std::move(cursorsCopy));
+  copyNode->setCursors(this->ctxIdx_, std::move(cursorsCopy));
   return copyNode;
 }
 
