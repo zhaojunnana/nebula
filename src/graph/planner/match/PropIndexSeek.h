@@ -26,6 +26,8 @@ class PropIndexSeek final : public StartVidFinder {
 
   StatusOr<SubPlan> transformEdge(EdgeContext* edgeCtx) override;
 
+  bool checkIndexFilter(Expression* filter, NodeContext* nodeCtx);
+
   const char* name() const override {
     return "PropIndexSeekFinder";
   }
