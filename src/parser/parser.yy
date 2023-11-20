@@ -427,7 +427,7 @@ using namespace nebula;
 %left KW_OR KW_XOR
 %left KW_AND
 %right KW_NOT
-%left EQ NE LT LE GT GE REG KW_IN KW_NOT_IN KW_CONTAINS KW_NOT_CONTAINS KW_STARTS_WITH KW_ENDS_WITH KW_NOT_STARTS_WITH KW_NOT_ENDS_WITH KW_IS_NULL KW_IS_NOT_NULL KW_IS_EMPTY KW_IS_NOT_EMPTY
+%left EQ ASSIGN NE LT LE GT GE REG KW_IN KW_NOT_IN KW_CONTAINS KW_NOT_CONTAINS KW_STARTS_WITH KW_ENDS_WITH KW_NOT_STARTS_WITH KW_NOT_ENDS_WITH KW_IS_NULL KW_IS_NOT_NULL KW_IS_EMPTY KW_IS_NOT_EMPTY
 %nonassoc DUMMY_LOWER_THAN_MINUS
 %left PLUS MINUS
 %left STAR DIV MOD
@@ -698,6 +698,9 @@ expression_internal
         $$ = UnaryExpression::makeIsNotEmpty(qctx->objPool(), $1);
     }
     | expression_internal EQ expression_internal {
+        $$ = RelationalExpression::makeEQ(qctx->objPool(), $1, $3);
+    }
+    | expression_internal ASSIGN expression_internal {
         $$ = RelationalExpression::makeEQ(qctx->objPool(), $1, $3);
     }
     | expression_internal NE expression_internal {
@@ -3519,10 +3522,10 @@ get_config_item
     ;
 
 set_config_item
-    : config_module_enum COLON name_label ASSIGN expression {
+    : config_module_enum COLON name_label ASSIGN constant_expression {
         $$ = new ConfigRowItem($1, $3, $5);
     }
-    | name_label ASSIGN expression {
+    | name_label ASSIGN constant_expression {
         $$ = new ConfigRowItem(meta::cpp2::ConfigModule::ALL, $1, $3);
     }
     | config_module_enum COLON name_label ASSIGN L_BRACE update_list R_BRACE {
