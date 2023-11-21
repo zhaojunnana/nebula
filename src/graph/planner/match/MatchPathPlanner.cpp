@@ -81,6 +81,14 @@ StatusOr<SubPlan> MatchPathPlanner::transform(WhereClauseContext* bindWhere,
   size_t startIndex = 0;
   bool startFromEdge = false;
 
+  // var.prop support, register tag for node alias
+  for (auto& nodeInfo : path_.nodeInfos) {
+    auto nodeAlias = nodeInfo.alias;
+    for (auto& nodeLabel : nodeInfo.labels) {
+      ctx_->qctx->vctx()->registerNodePropIndexTag(nodeAlias, nodeLabel);
+    }
+  }
+
   NG_RETURN_IF_ERROR(findStarts(bindWhere, nodeAliasesSeen, startFromEdge, startIndex, subplan));
   NG_RETURN_IF_ERROR(expand(startFromEdge, startIndex, subplan));
 
