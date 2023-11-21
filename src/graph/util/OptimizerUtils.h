@@ -166,6 +166,12 @@ class OptimizerUtils {
                                                   const std::vector<FilterItem> &items);
   static std::vector<IndexItemPtr> allIndexesBySchema(graph::QueryContext *qctx,
                                                       const IndexScan *node);
+
+  static std::vector<IndexItemPtr> allIndexesBySchema(graph::QueryContext* qctx,
+                                                      GraphSpaceID spaceId,
+                                                      int32_t targetSchemaId,
+                                                      bool isEdge);
+
   static Status analyzeExpression(Expression *expr,
                                   std::vector<FilterItem> *items,
                                   ScanKind *kind,
