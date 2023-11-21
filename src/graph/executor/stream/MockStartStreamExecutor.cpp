@@ -15,7 +15,7 @@ using Row = List;
 namespace graph {
 
 std::shared_ptr<RoundResult> MockStartStreamExecutor::executeOneRound(
-  std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) {
+  std::shared_ptr<DataSet> input, Offset offset) {
     std::cout << "input: " << input << std::endl;
     // int64_t index = 0;
     // if (!offset->empty()) {
@@ -26,7 +26,7 @@ std::shared_ptr<RoundResult> MockStartStreamExecutor::executeOneRound(
     std::vector<std::string> colNames = {nebula::kVid};
     ds->colNames = std::move(colNames);
     Row row;
-    row.emplace_back(Value("player101"));
+    row.emplace_back(Value(1l));
     ds->rows.emplace_back(std::move(row));
     // std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> cur;
     return std::make_shared<RoundResult>(ds, false, offset);

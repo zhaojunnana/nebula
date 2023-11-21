@@ -164,7 +164,12 @@ void PropertyTrackerVisitor::visit(EdgePropertyExpression *expr) {
 
 void PropertyTrackerVisitor::visit(LabelTagPropertyExpression *expr) {
   auto &nodeAlias = static_cast<VariablePropertyExpression *>(expr->label())->prop();
-  auto &tagName = expr->sym();
+  auto &tagName = (expr->sym() != "*") ? expr->sym()
+   : qctx_->vctx()->getNodePropIndexTag(nodeAlias);
+  if ("*" == expr->sym() && tagName.empty()) {
+    propsUsed_.insertCols(nodeAlias);
+    return;
+  }
   auto &propName = expr->prop();
 
   auto ret = qctx_->schemaMng()->toTagID(space_, tagName);

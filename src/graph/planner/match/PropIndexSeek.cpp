@@ -5,9 +5,11 @@
 
 #include "graph/planner/match/PropIndexSeek.h"
 
+#include "graph/context/QueryContext.h"
 #include "graph/planner/match/MatchSolver.h"
 #include "graph/planner/plan/Query.h"
 #include "graph/util/ExpressionUtils.h"
+#include "graph/util/OptimizerUtils.h"
 
 namespace nebula {
 namespace graph {
@@ -147,11 +149,41 @@ bool PropIndexSeek::matchNode(NodeContext* nodeCtx) {
     filter = LogicalExpression::makeAnd(nodeCtx->qctx->objPool(), filterInPattern, filterInWhere);
   }
 
+  if (!checkIndexFilter(filter, nodeCtx)) {
+    return false;
+  }
+
   nodeCtx->scanInfo.filter = filter;
   nodeCtx->scanInfo.schemaIds = node.tids;
   nodeCtx->scanInfo.schemaNames = node.labels;
 
   return true;
+}
+
+bool PropIndexSeek::checkIndexFilter(Expression* filter, NodeContext* nodeCtx) {
+  auto& node = *nodeCtx->info;
+
+  nebula::storage::cpp2::IndexQueryContext iqctx;
+  iqctx.filter_ref() = Expression::encode(*filter);
+  auto scan = IndexScan::make(nodeCtx->qctx,
+                              nullptr,
+                              nodeCtx->spaceId,
+                              {iqctx},
+                              {kVid},
+                              false,
+                              node.tids.back());
+  scan->setColNames({kVid});
+
+  std::vector<OptimizerUtils::FilterItem> items;
+  OptimizerUtils::ScanKind kind;
+  auto* newFilter = ExpressionUtils::rewriteParameter(filter, nodeCtx->qctx);
+  auto status = OptimizerUtils::analyzeExpression(
+    newFilter, &items, &kind, scan->isEdge(), nodeCtx->qctx);
+  if (!status.ok()) {
+    VLOG(2) << "Prop index seek analyze failed: " << status.message();
+  }
+  auto validIndexes = OptimizerUtils::findValidIndex(nodeCtx->qctx, scan, items);
+  return !validIndexes.empty();
 }
 
 StatusOr<SubPlan> PropIndexSeek::transformNode(NodeContext* nodeCtx) {

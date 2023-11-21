@@ -7,14 +7,25 @@
 #include <iostream>
 #include <memory>
 #include <utility>
+#include "common/base/Base.h"
 #include "common/base/Status.h"
+#include "graph/executor/stream/AppendVerticesStreamExecutor.h"
+#include "graph/executor/stream/FilterStreamExecutor.h"
+#include "graph/executor/stream/IndexScanStreamExecutor.h"
 #include "graph/executor/stream/MockGetNeighborsStreamExecutor.h"
 #include "graph/executor/stream/LimitStreamExecutor.h"
 #include "graph/executor/stream/MockStartStreamExecutor.h"
 #include "graph/executor/stream/MockTransportStreamExecutor.h"
 #include "graph/executor/stream/LimitStreamExecutor.h"
+#include "graph/executor/stream/ProjectStreamExecutor.h"
 #include "graph/executor/stream/StreamCollectExecutor.h"
+#include "graph/executor/stream/TraverseStreamExecutor.h"
 #include "graph/planner/plan/PlanNode.h"
+#include "graph/planner/plan/Query.h"
+
+DEFINE_uint64(stream_executor_batch_size,
+              100,
+              "batch size of stream executor limit to storage query");
 
 namespace nebula {
 namespace graph {
@@ -28,21 +39,25 @@ bool RoundResult::hasNextRound() {
     return hasNextRound_;
 }
 
-std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> RoundResult::getOffset() {
+Offset RoundResult::getOffset() {
     return offset_;
 }
 
 // static
-StreamExecutor *StreamExecutor::createStream(const PlanNode *node, QueryContext *qctx,
- std::shared_ptr<std::atomic_bool> stopFlag) {
+StreamExecutor *StreamExecutor::createStream(const PlanNode *node, QueryContext *qctx) {
   std::unordered_map<int64_t, StreamExecutor *> visited;
-  return makeStreamExecutor(node, qctx, &visited, stopFlag);
+  auto abnormalStatus = std::make_shared<Status>(Status::OK());
+  auto rootExecutor = makeStreamExecutor(node, qctx, &visited, abnormalStatus);
+  auto collectorExecutor = qctx->objPool()->makeAndAdd<StreamCollectExecutor>(node, qctx);
+  collectorExecutor->dependsOn(rootExecutor);
+  collectorExecutor->setSharedAbnormalStatus(abnormalStatus);
+  return collectorExecutor;
 }
 
 // static
 StreamExecutor *StreamExecutor::makeStreamExecutor(const PlanNode *node, QueryContext *qctx,
     std::unordered_map<int64_t, StreamExecutor *> *visited,
-    std::shared_ptr<std::atomic_bool> stopFlag) {
+    std::shared_ptr<Status> sharedAbnormalStatus) {
   DCHECK(qctx != nullptr);
   DCHECK(node != nullptr);
   auto iter = visited->find(node->id());
@@ -51,10 +66,10 @@ StreamExecutor *StreamExecutor::makeStreamExecutor(const PlanNode *node, QueryCo
   }
 
   StreamExecutor *exec = makeStreamExecutor(qctx, node);
-  exec->setSharedStopFLag(stopFlag);
+  exec->setSharedAbnormalStatus(sharedAbnormalStatus);
 
   for (size_t i = 0; i < node->numDeps(); ++i) {
-    exec->dependsOn(makeStreamExecutor(node->dep(i), qctx, visited, stopFlag));
+    exec->dependsOn(makeStreamExecutor(node->dep(i), qctx, visited, sharedAbnormalStatus));
   }
 
   visited->insert({node->id(), exec});
@@ -66,33 +81,38 @@ StreamExecutor *StreamExecutor::makeStreamExecutor(QueryContext *qctx, const Pla
   auto pool = qctx->objPool();
 //   auto &spaceName = qctx->rctx() ? qctx->rctx()->session()->spaceName() : "";
   switch (node->kind()) {
-    case PlanNode::Kind::kStart: {
-        return pool->makeAndAdd<MockStartStreamExecutor>(node, qctx);
-    }
-    case PlanNode::Kind::kIndexScan:
     case PlanNode::Kind::kEdgeIndexFullScan:
     case PlanNode::Kind::kEdgeIndexPrefixScan:
     case PlanNode::Kind::kEdgeIndexRangeScan:
     case PlanNode::Kind::kTagIndexFullScan:
     case PlanNode::Kind::kTagIndexPrefixScan:
     case PlanNode::Kind::kTagIndexRangeScan:
-    case PlanNode::Kind::kTraverse:{
+    case PlanNode::Kind::kExpandAll: {
       return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
     }
     case PlanNode::Kind::kExpand: {
       return pool->makeAndAdd<MockGetNeighborsStreamExecutor>(node, qctx);
     }
+    case PlanNode::Kind::kStart: {
+        return pool->makeAndAdd<MockStartStreamExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kIndexScan: {
+      return pool->makeAndAdd<IndexScanStreamExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kFilter: {
+      return pool->makeAndAdd<FilterStreamExecutor>(node, qctx);
+    }
     case PlanNode::Kind::kAppendVertices: {
-      return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
+      return pool->makeAndAdd<AppendVerticesStreamExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kTraverse: {
+      return pool->makeAndAdd<TraverseStreamExecutor>(node, qctx);
+    }
+    case PlanNode::Kind::kProject: {
+      return pool->makeAndAdd<ProjectStreamExecutor>(node, qctx);
     }
     case PlanNode::Kind::kLimit: {
       return pool->makeAndAdd<LimitStreamExecutor>(node, qctx);
-    }
-    case PlanNode::Kind::kExpandAll:{
-      return pool->makeAndAdd<MockTransportStreamExecutor>(node, qctx);
-    }
-    case PlanNode::Kind::kProject: {
-      return pool->makeAndAdd<StreamCollectExecutor>(node, qctx);
     }
     case PlanNode::Kind::kUnknown: {
       DLOG(FATAL) << "Unknown plan node kind " << static_cast<int32_t>(node->kind());
@@ -127,7 +147,11 @@ int32_t StreamExecutor::markFinishTask(bool hasNextRound) {
         for (auto next : successors_) {
           static_cast<StreamExecutor*>(next)->markSubmitTask();
         }
-        this->markFinishExecutor();
+        // make sure the markup is only executed once
+        auto oldFlag = finishFlag_.exchange(true);
+        if (!oldFlag) {
+          this->markFinishExecutor();
+        }
         // flush once
         for (auto next : successors_) {
           static_cast<StreamExecutor*>(next)->markFinishTask(false);
@@ -141,16 +165,22 @@ void StreamExecutor::setRootPromise(folly::Promise<Status>&& rootPromise) {
     rootPromiseHasBeenSet_ = true;
 }
 
-void StreamExecutor::setSharedStopFLag(std::shared_ptr<std::atomic_bool> stopFlag) {
-  stopFlag_ = stopFlag;
+void StreamExecutor::setSharedAbnormalStatus(std::shared_ptr<Status> abnormalStatus) {
+  abnormalStatus_ = abnormalStatus;
 }
 
 bool StreamExecutor::isExecutorStopped() {
-  return *stopFlag_;
+  return stopFlag_;
 }
 
 void StreamExecutor::markStopExecutor() {
-  *stopFlag_ = true;
+  DLOG(INFO) << "markStopExecutor: " << id();
+  auto oldFlag = stopFlag_.exchange(true);
+  if (!oldFlag) {
+    for (auto upstream : depends_) {
+      static_cast<StreamExecutor*>(upstream)->markStopExecutor();
+    }
+  }
 }
 
 void StreamExecutor::markFinishExecutor() {
@@ -162,6 +192,10 @@ void StreamExecutor::markFinishExecutor() {
     if (rootPromiseHasBeenSet_) {
         rootPromise_.setValue(Status::OK());
     }
+}
+
+int32_t StreamExecutor::getBatchSize() {
+  return FLAGS_stream_executor_batch_size;
 }
 
 folly::Future<Status> StreamExecutor::execute() {

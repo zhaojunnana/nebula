@@ -7,10 +7,12 @@
 #include "graph/scheduler/AsyncMsgNotifyBasedScheduler.h"
 #include "graph/scheduler/AsyncStreamBasedScheduler.h"
 #include <folly/executors/CPUThreadPoolExecutor.h>
+#include <gflags/gflags.h>
 #include <atomic>
 #include <memory>
 #include "graph/executor/StreamExecutor.h"
 
+DEFINE_bool(stream_executor_enable, false, "whether the flow executor is enbale");
 DECLARE_bool(enable_lifetime_optimize);
 
 namespace nebula {
@@ -39,7 +41,13 @@ folly::Future<Status> AsyncStreamBasedScheduler::schedule() {
   auto root = qctx_->plan()->root();
 
   // witch schedule use
-  if (root->kind() != PlanNode::Kind::kProject) {
+  if (!FLAGS_stream_executor_enable) {
+    return baseScheduler_->schedule();
+  }
+  std::vector<PlanNode::Kind> pattern;
+  buildPlanPattern(root, pattern);
+  auto patternStr = buildPatternString(pattern);
+  if (STREAM_PATTERNS.find(patternStr) == STREAM_PATTERNS.end()) {
     return baseScheduler_->schedule();
   }
 
@@ -50,8 +58,7 @@ folly::Future<Status> AsyncStreamBasedScheduler::schedule() {
     analyzeLifetime(root);
   }
   // plan node 1 to 1 create to stream executor
-  auto stopFlag = std::make_shared<std::atomic_bool>(false);
-  auto executor = StreamExecutor::createStream(root, qctx_, stopFlag);
+  auto executor = StreamExecutor::createStream(root, qctx_);
   DLOG(INFO) << formatPrettyDependencyTree(executor);
   return doSchedule(executor);
 }
@@ -96,7 +103,8 @@ folly::Future<Status> AsyncStreamBasedScheduler::doSchedule(StreamExecutor* root
 void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
                                            StreamExecutor* executor,
                                            std::shared_ptr<DataSet> input,
-                                           std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) const {
+                                           std::unordered_map<Value,
+                                            nebula::storage::cpp2::ScanCursor> offset) const {
   folly::via(&pool, [&pool, executor, input, offset, this] {
     auto r = executor->executeOneRound(input, offset);
     auto out = r->getOutputData();
@@ -106,7 +114,7 @@ void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
       DLOG(INFO) << "stream stopped " << executor->id() << " , igore next task submit.";
     }
 
-    if (!isStopped && nullptr != out) {
+    if (nullptr != out) {
       for (auto successor : executor->successors()) {
         auto next = static_cast<StreamExecutor*>(successor);
         next->markSubmitTask();
@@ -154,6 +162,14 @@ void AsyncStreamBasedScheduler::appendExecutor(size_t spaces,
   ss << std::string(spaces, ' ') << formatPrettyId(executor) << std::endl;
   for (auto depend : executor->depends()) {
     appendExecutor(spaces + 1, depend, ss);
+  }
+}
+
+void AsyncStreamBasedScheduler::buildPlanPattern(PlanNode* root,
+  std::vector<PlanNode::Kind>& pattern) {
+  pattern.emplace_back(root->kind());
+  for (auto depend : root->dependencies()) {
+    buildPlanPattern(const_cast<PlanNode*>(depend), pattern);
   }
 }
 

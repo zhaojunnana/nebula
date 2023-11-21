@@ -33,6 +33,7 @@ class LookupProcessor : public BaseProcessor<cpp2::LookupIndexResp> {
   void onProcessFinished() {
     BaseProcessor<cpp2::LookupIndexResp>::resp_.data_ref() = std::move(resultDataSet_);
     BaseProcessor<cpp2::LookupIndexResp>::resp_.stat_data_ref() = std::move(statsDataSet_);
+    BaseProcessor<cpp2::LookupIndexResp>::resp_.cursors_ref() = std::move(mergedCursors_);
   }
   void profilePlan(IndexNode* plan);
   void runInSingleThread(const std::vector<PartitionID>& parts, std::unique_ptr<IndexNode> plan);
@@ -40,8 +41,8 @@ class LookupProcessor : public BaseProcessor<cpp2::LookupIndexResp> {
   ::nebula::cpp2::ErrorCode prepare(const cpp2::LookupIndexRequest& req);
   ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> buildPlan(
       const cpp2::LookupIndexRequest& req);
-  ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> buildOneContext(
-      const cpp2::IndexQueryContext& ctx);
+  ErrorOr<nebula::cpp2::ErrorCode, std::unique_ptr<IndexNode>> buildOneContext(size_t ctxItx,
+      const cpp2::IndexQueryContext& ctx, const cpp2::LookupIndexRequest& req);
   std::vector<std::unique_ptr<IndexNode>> reproducePlan(IndexNode* root, size_t count);
   ErrorOr<nebula::cpp2::ErrorCode, std::vector<std::pair<std::string, cpp2::StatType>>>
   handleStatProps(const std::vector<cpp2::StatProp>& statProps);
@@ -56,6 +57,7 @@ class LookupProcessor : public BaseProcessor<cpp2::LookupIndexResp> {
   nebula::DataSet statsDataSet_;
   std::vector<nebula::DataSet> partResults_;
   std::vector<cpp2::StatType> statTypes_;
+  std::unordered_map<Value, cpp2::ScanCursor> mergedCursors_;
 };
 }  // namespace storage
 }  // namespace nebula
