@@ -99,7 +99,7 @@ class GetNeighborsNode : public QueryNode<VertexID> {
     }
 
     cpp2::ScanCursor c;
-    if (upstream_->valid()) {
+    if (upstream_->name_ != "MultiTagNode" && upstream_->valid()) {
       c.next_cursor_ref() = upstream_->key().str();
     }
     retCursors_->emplace(vId, std::move(c));
@@ -185,7 +185,8 @@ class GetNeighborsSampleNode : public GetNeighborsNode {
                          nebula::DataSet* resultDataSet,
                          std::unordered_map<Value, cpp2::ScanCursor>* cursors,
                          int64_t limit)
-      : GetNeighborsNode(context, hashJoinNode, upstream, edgeContext, resultDataSet, cursors, limit) {
+      : GetNeighborsNode(context, hashJoinNode, upstream,
+      edgeContext, resultDataSet, cursors, limit) {
     sampler_ = std::make_unique<nebula::algorithm::ReservoirSampling<Sample>>(limit);
     name_ = "GetNeighborsSampleNode";
   }
