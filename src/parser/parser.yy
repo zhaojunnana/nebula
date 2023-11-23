@@ -191,7 +191,7 @@ using namespace nebula;
 %token KW_SHORTEST KW_PATH KW_NOLOOP KW_SHORTESTPATH KW_ALLSHORTESTPATHS
 %token KW_IS KW_NULL KW_DEFAULT
 %token KW_SNAPSHOT KW_SNAPSHOTS KW_LOOKUP
-%token KW_JOBS KW_JOB KW_RECOVER KW_FLUSH KW_COMPACT KW_REBUILD KW_SUBMIT KW_STATS KW_STATUS
+%token KW_JOBS KW_JOB KW_RECOVER KW_FLUSH KW_COMPACT KW_RANG_COMPACT KW_REBUILD KW_SUBMIT KW_STATS KW_STATUS
 %token KW_BIDIRECT
 %token KW_USER KW_USERS KW_ACCOUNT
 %token KW_PASSWORD KW_CHANGE KW_ROLE KW_ROLES
@@ -3309,6 +3309,12 @@ admin_job_sentence
     : KW_SUBMIT KW_JOB KW_COMPACT {
         auto sentence = new AdminJobSentence(meta::cpp2::JobOp::ADD,
                                              meta::cpp2::JobType::COMPACT);
+        $$ = sentence;
+    }
+    | KW_SUBMIT KW_JOB KW_RANG_COMPACT legal_integer {
+        auto sentence = new AdminJobSentence(meta::cpp2::JobOp::ADD,
+                                             meta::cpp2::JobType::COMPACT);
+        sentence->addPara(std::to_string($4));
         $$ = sentence;
     }
     | KW_SUBMIT KW_JOB KW_FLUSH {
