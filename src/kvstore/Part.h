@@ -6,6 +6,7 @@
 #ifndef KVSTORE_PART_H_
 #define KVSTORE_PART_H_
 
+#include "LogEncoder.h"
 #include "common/base/Base.h"
 #include "common/utils/NebulaKeyUtils.h"
 #include "kvstore/Common.h"
@@ -339,6 +340,39 @@ class Part : public raftex::RaftPart {
    */
   void registerOnLeaderLost(LeaderChangeCB cb);
 
+  void commitBinLog(LogID logID, TermID termID, folly::StringPiece log);
+
+  void writeBinLog(LogType logType,
+                   folly::StringPiece key,
+                   folly::StringPiece value,
+                   LogID logID,
+                   TermID termID);
+
+  void writeVertexBinLog(LogType logType,
+                         folly::StringPiece key,
+                         folly::StringPiece value,
+                         LogID logID,
+                         TermID termID);
+
+  void writeEdgeBinLog(LogType logType,
+                       folly::StringPiece key,
+                       folly::StringPiece value,
+                       LogID logID,
+                       TermID termID);
+
+  void printVidLog(
+      folly::StringPiece vid, std::string operate, LogID logID, TermID termID, TagID tagId);
+
+  void printEdgeLog(folly::StringPiece src,
+                    EdgeRanking rank,
+                    folly::StringPiece dst,
+                    std::string operate,
+                    LogID logID,
+                    TermID termID,
+                    EdgeType edgeType);
+
+  void setVidType(const nebula::cpp2::PropertyType& vidType);
+
  protected:
   GraphSpaceID spaceId_;
   PartitionID partId_;
@@ -350,6 +384,7 @@ class Part : public raftex::RaftPart {
  private:
   KVEngine* engine_ = nullptr;
   int32_t vIdLen_;
+  nebula::cpp2::PropertyType vidType_;
 };
 
 }  // namespace kvstore

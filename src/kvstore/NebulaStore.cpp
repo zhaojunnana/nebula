@@ -227,12 +227,13 @@ void NebulaStore::loadPartFromDataPath() {
       std::atomic<size_t> counter(partRaftPeers.size());
       folly::Baton<true, std::atomic> baton;
       LOG(INFO) << "Need to open " << partRaftPeers.size() << " parts of space " << spaceId;
+      nebula::cpp2::PropertyType vidType = metaClient_->getSpaceVidType(spaceId).value();
       for (auto& it : partRaftPeers) {
         auto& partId = it.first;
         Peers& raftPeers = it.second;
 
         bgWorkers_->addTask(
-            [spaceId, partId, &raftPeers, enginePtr, &counter, &baton, this]() mutable {
+            [spaceId, vidType, partId, &raftPeers, enginePtr, &counter, &baton, this]() mutable {
               // create part
               bool isLearner = false;
               std::vector<HostAddr> addrs;  // raft peers
@@ -248,7 +249,7 @@ void NebulaStore::loadPartFromDataPath() {
                   }
                 }
               }
-              auto part = newPart(spaceId, partId, enginePtr, isLearner, addrs);
+              auto part = newPart(spaceId, partId, enginePtr, isLearner, addrs, vidType);
               LOG(INFO) << "Load part " << spaceId << ", " << partId << " from disk";
 
               // add learner peers
@@ -485,7 +486,8 @@ std::shared_ptr<Part> NebulaStore::newPart(GraphSpaceID spaceId,
                                            PartitionID partId,
                                            KVEngine* engine,
                                            bool asLearner,
-                                           const std::vector<HostAddr>& raftPeers) {
+                                           const std::vector<HostAddr>& raftPeers,
+                                           nebula::cpp2::PropertyType vidType) {
   auto walPath = folly::stringPrintf("%s/wal/%d", engine->getWalRoot(), partId);
   auto part = std::make_shared<Part>(spaceId,
                                      partId,
@@ -499,6 +501,7 @@ std::shared_ptr<Part> NebulaStore::newPart(GraphSpaceID spaceId,
                                      clientMan_,
                                      diskMan_,
                                      getSpaceVidLen(spaceId));
+  part->setVidType(vidType);
   std::vector<HostAddr> peersWithoutMe;
   for (auto& p : raftPeers) {
     if (p != raftAddr_) {
@@ -1440,6 +1443,10 @@ void NebulaStore::registerOnNewPartAdded(
     }
   }
   onNewPartAdded_.insert(std::make_pair(funcName, func));
+}
+
+void NebulaStore::setMetaClient(meta::MetaClient* metaClient) {
+  metaClient_ = metaClient;
 }
 
 }  // namespace kvstore
