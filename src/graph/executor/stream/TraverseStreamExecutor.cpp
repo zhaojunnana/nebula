@@ -362,8 +362,8 @@ void TraverseStreamExecutor::expand(GetNeighborsIter* iter, TraverseRoundContext
   if (iter->numRows() == 0) {
     return;
   }
-  auto* vFilter = traverse_->vFilter()->clone();
-  auto* eFilter = traverse_->eFilter()->clone();
+  auto* vFilter = traverse_->vFilter() ? traverse_->vFilter()->clone() : nullptr;
+  auto* eFilter = traverse_->eFilter() ? traverse_->eFilter()->clone() : nullptr;
   QueryExpressionContext ctx(ectx_);
 
   Value curVertex;
