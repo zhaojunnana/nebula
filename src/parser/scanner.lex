@@ -169,6 +169,7 @@ LABEL_FULL_WIDTH            {CN_EN_FULL_WIDTH}{CN_EN_NUM_FULL_WIDTH}*
 "ORDER"                     { return TokenType::KW_ORDER; }
 "INGEST"                    { return TokenType::KW_INGEST; }
 "COMPACT"                   { return TokenType::KW_COMPACT; }
+"RANG_COMPACT"              { return TokenType::KW_RANG_COMPACT; }
 "FLUSH"                     { return TokenType::KW_FLUSH; }
 "SUBMIT"                    { return TokenType::KW_SUBMIT; }
 "ASC"                       { return TokenType::KW_ASC; }
