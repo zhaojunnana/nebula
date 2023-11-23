@@ -532,6 +532,13 @@ class RocksEngine : public KVEngine {
   nebula::cpp2::ErrorCode compact() override;
 
   /**
+   * @brief Do data compation files in lsm tree
+   *
+   * @return nebula::cpp2::ErrorCode
+   */
+  nebula::cpp2::ErrorCode rangCompact(int ts, std::atomic<bool>& canceled) override;
+
+  /**
    * @brief Flush data in memtable into sst
    *
    * @return nebula::cpp2::ErrorCode
@@ -594,6 +601,12 @@ class RocksEngine : public KVEngine {
    */
   void openBackupEngine(GraphSpaceID spaceId);
 
+  int randomRang(int low, int up);
+
+  void hasDataLevel(rocksdb::ColumnFamilyMetaData& meta, std::vector<int>& hasLevel);
+
+  int getCompactLevel(std::vector<int>& hasLevel, std::unordered_set<int>& readyLevel);
+
  private:
   GraphSpaceID spaceId_;
   std::string dataPath_;
@@ -604,6 +617,8 @@ class RocksEngine : public KVEngine {
   int32_t partsNum_ = -1;
   size_t extractorLen_;
   bool isPlainTable_{false};
+  std::unordered_map<int, int64_t> rangCompactLevelTimes;
+  int64_t compactLevelSum;
 };
 
 }  // namespace kvstore

@@ -31,6 +31,10 @@ class CompactJobExecutor : public SimpleConcurrentJobExecutor {
    */
   folly::Future<Status> executeInternal(HostAddr&& address,
                                         std::vector<PartitionID>&& parts) override;
+
+  nebula::cpp2::ErrorCode stop() override;
+
+  nebula::cpp2::ErrorCode check() override;
 };
 
 }  // namespace meta

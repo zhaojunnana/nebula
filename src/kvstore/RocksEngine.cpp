@@ -537,6 +537,188 @@ nebula::cpp2::ErrorCode RocksEngine::compact() {
   }
 }
 
+static const int seed = folly::randomNumberSeed();
+using RandomT = std::mt19937;
+static RandomT rng(seed);
+int RocksEngine::randomRang(int low, int up) {
+  std::uniform_int_distribution<int> range(low, up);
+  return range(rng);
+}
+
+void RocksEngine::hasDataLevel(rocksdb::ColumnFamilyMetaData& meta, std::vector<int>& hasLevel) {
+  hasLevel.clear();
+  int sz = meta.levels.size();
+  for (int i = 2; i < sz; i++) {
+    if (meta.levels[i].size > 0) {
+      hasLevel.push_back(i);
+    }
+  }
+}
+
+int RocksEngine::getCompactLevel(std::vector<int>& hasLevel, std::unordered_set<int>& readyLevel) {
+  if (hasLevel.empty()) {
+    return -1;
+  }
+  if (hasLevel.size() <= readyLevel.size()) {
+    return -1;
+  }
+  int levelIndex = randomRang(0, hasLevel.size() - 1);
+  bool hasNext = true;
+  int level;
+  while (true) {
+    level = hasLevel[levelIndex];
+    auto it = rangCompactLevelTimes.find(level);
+    if (it != rangCompactLevelTimes.end()) {
+      double x = static_cast<double>(it->second) / static_cast<double>(compactLevelSum);
+      double s = static_cast<double>(level - 1) / static_cast<double>(15);
+      if (x > s) {
+        if (hasNext && levelIndex + 1 <= static_cast<int>(hasLevel.size() - 1)) {
+          levelIndex++;
+          continue;
+        }
+        if (levelIndex - 1 >= 0) {
+          levelIndex--;
+          hasNext = false;
+          continue;
+        }
+        for (int i = hasLevel.size() - 1; i >= 0; i--) {
+          if (readyLevel.find(hasLevel[i]) == readyLevel.end()) {
+            return hasLevel[i];
+          }
+        }
+        return -1;
+      } else {
+        return level;
+      }
+    } else {
+      return level;
+    }
+  }
+}
+
+void printRangCompactInfo(rocksdb::ColumnFamilyMetaData& meta) {
+  int sz = meta.levels.size();
+  for (int i = 0; i < sz; i++) {
+    LOG(INFO) << "CompactFiles Info, Level:" << meta.levels[i].level
+              << " , ByteSize: " << meta.levels[i].size
+              << " , FileSize: " << meta.levels[i].files.size();
+  }
+}
+
+nebula::cpp2::ErrorCode RocksEngine::rangCompact(int ts, std::atomic<bool>& canceled) {
+  rocksdb::ColumnFamilyMetaData meta;
+  db_->GetColumnFamilyMetaData(&meta);
+  rocksdb::Options op = db_->GetOptions();
+  uint64_t maxCompactSize = op.soft_pending_compaction_bytes_limit;
+  std::vector<int> hasLevel;
+  hasDataLevel(meta, hasLevel);
+  std::unordered_set<int> readyLevel;
+  if (hasLevel.empty()) {
+    LOG(WARNING) << "All Level Data Empty, No Need For CompactFlies!";
+    return nebula::cpp2::ErrorCode::SUCCEEDED;
+  }
+  canceled = false;
+  printRangCompactInfo(meta);
+  int level = -1;
+  int fs = 0;
+  int startIndex = 0;
+  bool hasNext = true;
+  uint64_t fileSize = 0;
+  bool nextLevel = true;
+  auto start = time::WallClock::fastNowInMilliSec();
+  auto du = (time::WallClock::fastNowInMilliSec() - start) / 1000 / 60;
+  while (du < ts && !canceled) {
+    if (nextLevel) {
+      level = getCompactLevel(hasLevel, readyLevel);
+      if (level == -1) {
+        LOG(WARNING) << "No Need For CompactFlies!";
+        db_->GetColumnFamilyMetaData(&meta);
+        printRangCompactInfo(meta);
+        return nebula::cpp2::ErrorCode::SUCCEEDED;
+      }
+      fs = meta.levels[level].files.size();
+      startIndex = randomRang(0, fs - 1);
+      hasNext = true;
+      fileSize = 0;
+      readyLevel.emplace(level);
+      compactLevelSum++;
+      if (rangCompactLevelTimes.find(level) == rangCompactLevelTimes.end()) {
+        rangCompactLevelTimes.insert({level, 1});
+      } else {
+        rangCompactLevelTimes.at(level) += 1;
+      }
+      nextLevel = false;
+    }
+
+    int startFileIndex = startIndex;
+    if (hasNext) {
+      startFileIndex = startIndex + fileSize;
+    } else {
+      startFileIndex = startIndex - fileSize;
+    }
+    if (hasNext && startFileIndex > fs - 1) {
+      hasNext = false;
+      fileSize = 0;
+      startFileIndex = startIndex;
+    }
+    if (!hasNext && startFileIndex < 0) {
+      nextLevel = true;
+      continue;
+    }
+    VLOG(1) << "CompactFiles Prepare, random level:" << level
+            << " , startFileIndex: " << startFileIndex << " , hasNext: " << hasNext;
+    std::vector<std::string> files;
+    uint64_t sumSize = 0;
+    if (hasNext) {
+      for (int i = startFileIndex; i < fs; i++) {
+        auto& file = meta.levels[level].files[i];
+        if (sumSize + file.size <= maxCompactSize / 2 && files.size() < 10) {
+          sumSize += file.size;
+          files.push_back(file.db_path + "/" + file.name);
+        } else {
+          break;
+        }
+      }
+    } else {
+      for (int i = startFileIndex - 1; i >= 0; i--) {
+        auto& file = meta.levels[level].files[i];
+        if (sumSize + file.size <= maxCompactSize / 2 && files.size() < 10) {
+          sumSize += file.size;
+          files.push_back(file.db_path + "/" + file.name);
+        } else {
+          break;
+        }
+      }
+    }
+
+    if (!files.empty()) {
+      VLOG(1) << "CompactFiles Start, fileSize:" << files.size()
+              << " , CompactByteSizes: " << sumSize;
+      fileSize += files.size();
+      rocksdb::Status status = db_->CompactFiles(rocksdb::CompactionOptions(), files, level);
+      if (status.ok()) {
+        VLOG(1) << "CompactFiles Success, random level:" << level
+                << " , startFileIndex: " << startFileIndex
+                << " , CompactFiles Success! fileSize: " << files.size()
+                << " , CompactByteSizes: " << sumSize;
+      } else {
+        VLOG(1) << "CompactFiles Failed: " << status.ToString();
+      }
+    } else {
+      if (hasNext) {
+        hasNext = false;
+        fileSize = 0;
+      } else {
+        nextLevel = true;
+      }
+    }
+    du = (time::WallClock::fastNowInMilliSec() - start) / 1000 / 60;
+  }
+  db_->GetColumnFamilyMetaData(&meta);
+  printRangCompactInfo(meta);
+  return nebula::cpp2::ErrorCode::SUCCEEDED;
+}
+
 nebula::cpp2::ErrorCode RocksEngine::flush() {
   rocksdb::FlushOptions options;
   rocksdb::Status status = db_->Flush(options);
