@@ -6,11 +6,13 @@
 #include "graph/planner/match/LabelIndexSeek.h"
 #include <vector>
 
+#include "common/base/Base.h"
 #include "common/expression/Expression.h"
 #include "common/expression/LogicalExpression.h"
 #include "graph/planner/match/MatchSolver.h"
 #include "graph/planner/plan/Query.h"
 #include "graph/util/ExpressionUtils.h"
+#include "graph/util/OptimizerUtils.h"
 
 namespace nebula {
 namespace graph {
@@ -91,6 +93,10 @@ StatusOr<SubPlan> LabelIndexSeek::transformNode(NodeContext* nodeCtx) {
     auto* filter = ExpressionUtils::rewriteInnerInExpr(nodeCtx->bindWhereClause->filter);
     const auto& nodeAlias = nodeCtx->info->alias;
     const auto& schemaName = nodeCtx->scanInfo.schemaNames.back();
+    auto schemaId = nodeCtx->scanInfo.schemaIds.back();
+    auto spaceId = nodeCtx->spaceId;
+    auto schemaIndexes = OptimizerUtils::allIndexesBySchema(nodeCtx->qctx,
+    spaceId, schemaId, false);
 
     std::vector<Expression*> filterGroups;
     if (filter->kind() == Expression::Kind::kLogicalAnd) {
@@ -104,8 +110,22 @@ StatusOr<SubPlan> LabelIndexSeek::transformNode(NodeContext* nodeCtx) {
         bool matched = exprs.empty() ? false : true;
         for (auto* expr : exprs) {
           auto tagPropExpr = static_cast<const LabelTagPropertyExpression*>(expr);
-          if (static_cast<const PropertyExpression*>(tagPropExpr->label())->prop() != nodeAlias ||
-              tagPropExpr->sym() != schemaName) {
+          auto exprAlias = static_cast<const PropertyExpression*>(tagPropExpr->label())->prop();
+          if (exprAlias != nodeAlias ||
+           (tagPropExpr->sym() != "*" && tagPropExpr->sym() != schemaName) ||
+           nodeCtx->qctx->vctx()->getNodePropIndexTag(exprAlias) != schemaName) {
+            matched = false;
+            break;
+          }
+          // check prop in tag index
+          bool hasIndex = false;
+          for (auto& index : schemaIndexes) {
+            if (tagPropExpr->prop() == index->get_fields().front().name) {
+              hasIndex = true;
+              break;
+            }
+          }
+          if (!hasIndex) {
             matched = false;
             break;
           }
