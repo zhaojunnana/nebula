@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <folly/executors/CPUThreadPoolExecutor.h>
 #include "graph/planner/plan/PlanNode.h"
 #include "graph/scheduler/Scheduler.h"
 #include "graph/executor/StreamExecutor.h"
@@ -27,8 +28,7 @@ class AsyncStreamBasedScheduler final : public Scheduler {
  private:
   folly::Future<Status> doSchedule(StreamExecutor* root) const;
 
-  void submitTask(folly::Executor& pool, StreamExecutor* executor,
-    std::shared_ptr<DataSet> input,
+  void submitTask(StreamExecutor* executor, std::shared_ptr<DataSet> input,
     std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) const;
 
   void addExecuting(Executor* executor) const;
@@ -54,6 +54,7 @@ class AsyncStreamBasedScheduler final : public Scheduler {
   mutable std::condition_variable cv_;
   mutable size_t executing_{0};
   QueryContext* qctx_{nullptr};
+  std::unique_ptr<folly::CPUThreadPoolExecutor> pool_;
 };
 
 static std::string buildPatternString(std::vector<PlanNode::Kind> pattern) {
