@@ -6,7 +6,6 @@
 #include "graph/planner/plan/PlanNode.h"
 #include "graph/scheduler/AsyncMsgNotifyBasedScheduler.h"
 #include "graph/scheduler/AsyncStreamBasedScheduler.h"
-#include <folly/executors/CPUThreadPoolExecutor.h>
 #include <gflags/gflags.h>
 #include <atomic>
 #include <memory>
@@ -60,12 +59,16 @@ folly::Future<Status> AsyncStreamBasedScheduler::schedule() {
   // plan node 1 to 1 create to stream executor
   auto executor = StreamExecutor::createStream(root, qctx_);
   DLOG(INFO) << formatPrettyDependencyTree(executor);
-  return doSchedule(executor);
+  pool_ = std::make_unique<folly::CPUThreadPoolExecutor>(4);
+  return doSchedule(executor).via(qctx_->rctx()->runner()).thenValue([this](Status s) {
+    if (this->pool_) {
+      this->pool_->join();
+    }
+    return s;
+  });
 }
 
 folly::Future<Status> AsyncStreamBasedScheduler::doSchedule(StreamExecutor* root) const {
-  // pool release ？
-  folly::CPUThreadPoolExecutor pool(4);
   folly::Promise<Status> promiseForRoot;
   auto resultFuture = promiseForRoot.getFuture();
   // set promise to root executor
@@ -95,17 +98,16 @@ folly::Future<Status> AsyncStreamBasedScheduler::doSchedule(StreamExecutor* root
 
   for (auto leaf : leafExeuctors) {
     leaf->markSubmitTask();
-    submitTask(pool, leaf, nullptr, {});
+    submitTask(leaf, nullptr, {});
   }
   return resultFuture;
 }
 
-void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
-                                           StreamExecutor* executor,
+void AsyncStreamBasedScheduler::submitTask(StreamExecutor* executor,
                                            std::shared_ptr<DataSet> input,
                                            std::unordered_map<Value,
                                             nebula::storage::cpp2::ScanCursor> offset) const {
-  folly::via(&pool, [&pool, executor, input, offset, this] {
+  folly::via(pool_.get(), [executor, input, offset, this] {
     auto r = executor->executeOneRound(input, offset);
     auto out = r->getOutputData();
 
@@ -118,7 +120,7 @@ void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
       for (auto successor : executor->successors()) {
         auto next = static_cast<StreamExecutor*>(successor);
         next->markSubmitTask();
-        submitTask(pool, next, out, {});
+        submitTask(next, out, {});
       }
     }
 
@@ -127,7 +129,7 @@ void AsyncStreamBasedScheduler::submitTask(folly::Executor &pool,
     }
     executor->markFinishTask(r->hasNextRound() && !isStopped);
     if (!isStopped && r->hasNextRound()) {
-      submitTask(pool, executor, input, r->getOffset());
+      submitTask(executor, input, r->getOffset());
     }
   });
 }
