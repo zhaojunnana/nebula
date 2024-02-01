@@ -8,8 +8,7 @@ namespace nebula {
 namespace graph {
 
 std::shared_ptr<RoundResult> MockTransportStreamExecutor::executeOneRound(
-  std::shared_ptr<DataSet> input, std::unordered_map<Value, nebula::storage::cpp2::ScanCursor> offset) {
-    // std::cout << "input: " << input << ", offset: " << offset << std::endl;
+  std::shared_ptr<DataSet> input, Offset offset) {
     return std::make_shared<RoundResult>(input, false, offset);
 }
 
