@@ -96,6 +96,7 @@ struct GoContext final : AstContext {
   // true when $$.tag.prop exist
   bool joinDst{false};
   bool isSimple{false};
+  bool isFlat{false};
 
   ExpressionProps exprProps;
 

@@ -102,6 +102,7 @@ Status GoValidator::validateTruncate(TruncateClause* truncate) {
   }
   auto* tExpr = truncate->truncate();
   goCtx_->random = truncate->isSample();
+  goCtx_->isFlat = truncate->isFlat();
   auto qeCtx = QueryExpressionContext();
   auto limits = tExpr->eval(qeCtx);
   if (!limits.isList()) {

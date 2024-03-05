@@ -185,7 +185,7 @@ using namespace nebula;
 %token KW_GET KW_DECLARE KW_GRAPH KW_META KW_STORAGE KW_AGENT
 %token KW_TTL KW_TTL_DURATION KW_TTL_COL KW_DATA KW_STOP
 %token KW_FETCH KW_PROP KW_UPDATE KW_UPSERT KW_WHEN
-%token KW_ORDER KW_ASC KW_LIMIT KW_SAMPLE KW_OFFSET KW_ASCENDING KW_DESCENDING
+%token KW_ORDER KW_ASC KW_LIMIT KW_FLAT_LIMIT KW_SAMPLE KW_OFFSET KW_ASCENDING KW_DESCENDING
 %token KW_DISTINCT KW_ALL KW_OF
 %token KW_BALANCE KW_LEADER KW_RESET KW_PLAN
 %token KW_SHORTEST KW_PATH KW_NOLOOP KW_SHORTESTPATH KW_ALLSHORTESTPATHS
@@ -526,6 +526,7 @@ unreserved_keyword
     | KW_ENDS               { $$ = new std::string("ends"); }
     | KW_VID_TYPE           { $$ = new std::string("vid_type"); }
     | KW_LIMIT              { $$ = new std::string("limit"); }
+    | KW_FLAT_LIMIT         { $$ = new std::string("flat_limit"); }
     | KW_SKIP               { $$ = new std::string("skip"); }
     | KW_OPTIONAL           { $$ = new std::string("optional"); }
     | KW_OFFSET             { $$ = new std::string("offset"); }
@@ -1389,6 +1390,9 @@ truncate_clause
     }
     | KW_LIMIT expression {
         $$ = new TruncateClause($2, false);
+    }
+    | KW_FLAT_LIMIT expression {
+        $$ = new TruncateClause($2, false, true);
     }
     ;
 
