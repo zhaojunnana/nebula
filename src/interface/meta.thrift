@@ -902,6 +902,7 @@ struct ListZonesResp {
 enum ListenerType {
     UNKNOWN       = 0x00,
     ELASTICSEARCH = 0x01,
+    NEBULA        = 0x02,
 } (cpp.enum_strict)
 
 struct AddListenerReq {
@@ -1012,6 +1013,7 @@ struct RestoreMetaResp {
 
 enum ExternalServiceType {
     ELASTICSEARCH = 0x01,
+    NEBULA        = 0x02,
 } (cpp.enum_strict)
 
 struct ServiceClient {

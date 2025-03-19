@@ -6,6 +6,7 @@ nebula_add_library(
     listener_obj OBJECT
     Listener.cpp
     elasticsearch/ESListener.cpp
+    nebula/NebulaListener.cpp
 )
 
 nebula_add_subdirectory(test)

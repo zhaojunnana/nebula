@@ -203,7 +203,7 @@ using namespace nebula;
 %token KW_UNWIND KW_SKIP KW_OPTIONAL
 %token KW_CASE KW_THEN KW_ELSE KW_END
 %token KW_GROUP KW_ZONE KW_GROUPS KW_ZONES KW_INTO KW_NEW
-%token KW_LISTENER KW_ELASTICSEARCH KW_FULLTEXT KW_HTTPS KW_HTTP
+%token KW_LISTENER KW_ELASTICSEARCH KW_NEBULA KW_FULLTEXT KW_HTTPS KW_HTTP
 %token KW_AUTO KW_ES_QUERY KW_ANALYZER
 %token KW_TEXT KW_SEARCH KW_CLIENTS KW_SIGN KW_SERVICE KW_TEXT_SEARCH
 %token KW_ANY KW_SINGLE KW_NONE
@@ -545,6 +545,7 @@ unreserved_keyword
     | KW_ZONES              { $$ = new std::string("zones"); }
     | KW_LISTENER           { $$ = new std::string("listener"); }
     | KW_ELASTICSEARCH      { $$ = new std::string("elasticsearch"); }
+    | KW_NEBULA             { $$ = new std::string("nebula"); }
     | KW_FULLTEXT           { $$ = new std::string("fulltext"); }
     | KW_STATS              { $$ = new std::string("stats"); }
     | KW_STATUS             { $$ = new std::string("status"); }
@@ -3859,11 +3860,17 @@ add_listener_sentence
     : KW_ADD KW_LISTENER KW_ELASTICSEARCH host_list {
         $$ = new AddListenerSentence(meta::cpp2::ListenerType::ELASTICSEARCH, $4);
     }
+    | KW_ADD KW_LISTENER KW_NEBULA host_list {
+        $$ = new AddListenerSentence(meta::cpp2::ListenerType::NEBULA, $4);
+    }
     ;
 
 remove_listener_sentence
     : KW_REMOVE KW_LISTENER KW_ELASTICSEARCH {
         $$ = new RemoveListenerSentence(meta::cpp2::ListenerType::ELASTICSEARCH);
+    }
+    | KW_REMOVE KW_LISTENER KW_NEBULA {
+        $$ = new RemoveListenerSentence(meta::cpp2::ListenerType::NEBULA);
     }
     ;
 

@@ -104,7 +104,7 @@ class ESListener : public Listener {
    */
   std::string encodeAppliedId(LogID lastId, TermID lastTerm, LogID lastApplyLogId) const;
 
- private:
+ protected:
   meta::SchemaManager* schemaMan_{nullptr};
   using PickFunc = std::function<void(BatchLogType type,
                                       const std::string& index,

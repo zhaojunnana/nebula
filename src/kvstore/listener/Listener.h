@@ -155,12 +155,12 @@ class Listener : public raftex::RaftPart {
   /**
    * @brief Trigger RaftPart::reset, clean all data and reset states
    */
-  void resetListener();
+   virtual void resetListener();
 
   /**
    * @brief Check whether listener has catchup leader
    */
-  bool pursueLeaderDone();
+   virtual bool pursueLeaderDone();
 
  protected:
   /**

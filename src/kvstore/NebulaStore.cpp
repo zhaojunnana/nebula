@@ -18,6 +18,7 @@
 #include "kvstore/NebulaSnapshotManager.h"
 #include "kvstore/RocksEngine.h"
 #include "kvstore/listener/elasticsearch/ESListener.h"
+#include "kvstore/listener/nebula/NebulaListener.h"
 
 DEFINE_string(engine_type, "rocksdb", "rocksdb, memory...");
 DEFINE_int32(num_workers, 4, "Number of worker threads");
@@ -657,6 +658,9 @@ std::shared_ptr<Listener> NebulaStore::newListener(GraphSpaceID spaceId,
   std::shared_ptr<Listener> listener;
   if (type == meta::cpp2::ListenerType::ELASTICSEARCH) {
     listener = std::make_shared<ESListener>(
+        spaceId, partId, raftAddr_, walPath, ioPool_, bgWorkers_, workers_, options_.schemaMan_);
+  } else if (type == meta::cpp2::ListenerType::NEBULA) {
+    listener = std::make_shared<NebulaListener>(
         spaceId, partId, raftAddr_, walPath, ioPool_, bgWorkers_, workers_, options_.schemaMan_);
   } else {
     LOG(FATAL) << "Should not reach here";
