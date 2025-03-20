@@ -122,6 +122,8 @@ class ESListener : public Listener {
 
   StatusOr<::nebula::plugin::ESAdapter> getESAdapter();
 
+  int getBatchSize();
+
   std::unique_ptr<std::string> lastApplyLogFile_{nullptr};
   std::unique_ptr<std::string> spaceName_{nullptr};
   int32_t vIdLen_;

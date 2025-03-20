@@ -10,6 +10,7 @@
 #include "common/utils/NebulaKeyUtils.h"
 
 DEFINE_string(write_meta_server_addrs, "", "listener write to meta server address");
+DEFINE_bool(nebula_listener_need_snapshot, true, "nebula listener need snapshot");
 using nebula::storage::StorageClient;
 
 namespace nebula {
@@ -28,7 +29,8 @@ void NebulaListener::init() {
   // Meta client
   meta::MetaClientOptions options;
   options.skipConfig_ = true;
-  metaClient_ = std::make_unique<meta::MetaClient>(std::move(ioThreadPool), std::move(hosts), options);
+  metaClient_ =
+      std::make_unique<meta::MetaClient>(std::move(ioThreadPool), std::move(hosts), options);
   // Load data try 3 time
   bool loadDataOk = metaClient_->waitForMetadReady(3);
   if (loadDataOk) {
@@ -355,7 +357,7 @@ void NebulaListener::processLogs() {
       }
     }
 
-    if (static_cast<int32_t>(batch.size()) > 1000) {
+    if (static_cast<int32_t>(batch.size()) > getBatchSize()) {
       break;
     }
     ++(*iter);
@@ -378,18 +380,28 @@ std::tuple<nebula::cpp2::ErrorCode, int64_t, int64_t> NebulaListener::commitSnap
   VLOG(2) << idStr_ << "Listener is committing snapshot.";
   int64_t count = 0;
   int64_t size = 0;
-  BatchHolder batch;
-  for (const auto& row : rows) {
-    count++;
-    size += row.size();
-    auto kv = decodeKV(row);
-    batch.put(kv.first.toString(), kv.second.toString());
+
+  if (FLAGS_nebula_listener_need_snapshot) {
+    BatchHolder batch;
+    for (const auto& row : rows) {
+      count++;
+      size += row.size();
+      auto kv = decodeKV(row);
+      batch.put(kv.first.toString(), kv.second.toString());
+    }
+    if (!applyBatch(batch)) {
+      LOG(INFO) << idStr_ << "Failed to apply data while committing snapshot.";
+      return {nebula::cpp2::ErrorCode::E_RAFT_PERSIST_SNAPSHOT_FAILED,
+              kNoSnapshotCount,
+              kNoSnapshotSize};
+    }
+  } else {
+    for (const auto& row : rows) {
+      count++;
+      size += row.size();
+    }
   }
-  if (!applyBatch(batch)) {
-    LOG(INFO) << idStr_ << "Failed to apply data while committing snapshot.";
-    return {
-        nebula::cpp2::ErrorCode::E_RAFT_PERSIST_SNAPSHOT_FAILED, kNoSnapshotCount, kNoSnapshotSize};
-  }
+
   if (finished) {
     CHECK(!raftLock_.try_lock());
     leaderCommitId_ = committedLogId;
