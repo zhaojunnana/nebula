@@ -103,6 +103,8 @@ nebula_add_executable(
         $<TARGET_OBJECTS:meta_version_man_obj>
         $<TARGET_OBJECTS:meta_data_upgrade_obj>
         $<TARGET_OBJECTS:meta_v2_thrift_obj>
+        $<TARGET_OBJECTS:storage_client_base_obj>
+        $<TARGET_OBJECTS:storage_client_obj>
         ${common_deps}
         ${storage_meta_deps}
     LIBRARIES
