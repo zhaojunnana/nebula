@@ -38,18 +38,17 @@ void NebulaListener::init() {
   }
   ESListener::init();
   updateWriteSpace();
-  executor_ = std::make_unique<folly::IOThreadPoolExecutor>(16);
 }
 
 bool NebulaListener::applyBatch(const BatchHolder& batch) {
   // TagID + props
   std::unordered_map<std::string,
-                     std::pair<std::unordered_map<TagID, std::vector<std::string>>,
-                               std::vector<storage::cpp2::NewVertex>>>
+      std::pair<std::unordered_map<TagID, std::vector<std::string>>,
+          std::vector<storage::cpp2::NewVertex>>>
       vertexMap;
   // EdgeType + props
   std::unordered_map<std::string,
-                     std::pair<std::vector<std::string>, std::vector<storage::cpp2::NewEdge>>>
+      std::pair<std::vector<std::string>, std::vector<storage::cpp2::NewEdge>>>
       edgeMap;
 
   std::vector<Value> deleteVertices;
@@ -191,71 +190,97 @@ bool NebulaListener::applyBatch(const BatchHolder& batch) {
     }
   }
   StorageClient::CommonRequestParam param(writeSpaceId_, 1, 1, false);
+  const int maxRetries = 3;
+  int retryCount = 0;
+  bool success = true;
+
+  auto executeWithRetry = [&](auto operation) -> bool {
+    retryCount = 0;
+    std::vector<std::pair<PartitionID, nebula::cpp2::ErrorCode>> allFailedCodes;
+    std::string lastException;
+
+    while (retryCount < maxRetries) {
+      try {
+        auto future = operation();
+        auto rpcResp = std::move(future).get();
+        auto completeness = rpcResp.completeness();
+        if (completeness == 100) {
+          return true;
+        }
+        if (retryCount == maxRetries - 1) {
+          const auto& failedCodes = rpcResp.failedParts();
+          allFailedCodes.insert(allFailedCodes.end(), failedCodes.begin(), failedCodes.end());
+        }
+
+        retryCount++;
+        if (retryCount < maxRetries) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(100 * retryCount));
+        }
+      } catch (const std::exception& e) {
+        if (retryCount == maxRetries - 1) {
+          lastException = e.what();
+        }
+        retryCount++;
+        if (retryCount < maxRetries) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(100 * retryCount));
+        }
+      }
+    }
+
+    if (!allFailedCodes.empty()) {
+      for (const auto& failedCode : allFailedCodes) {
+        LOG(ERROR) << "Operation failed after " << maxRetries << " retries, error "
+                   << apache::thrift::util::enumNameSafe(failedCode.second) << ", part "
+                   << failedCode.first;
+      }
+    }
+    if (!lastException.empty()) {
+      LOG(ERROR) << "Operation failed after " << maxRetries << " retries with exception: "
+                 << lastException;
+    }
+
+    return false;
+  };
+
   if (!vertexMap.empty()) {
     for (const auto& [key, value] : vertexMap) {
-      storage_->addVertices(param, value.second, value.first, false, false)
-          .via(executor_.get())
-          .thenValue([](storage::StorageRpcResponse<storage::cpp2::ExecResponse> rpcResp) {
-            auto completeness = rpcResp.completeness();
-            if (completeness != 100) {
-              const auto& failedCodes = rpcResp.failedParts();
-              for (auto failedCode : failedCodes) {
-                LOG(ERROR) << "add vertex failed, error "
-                           << apache::thrift::util::enumNameSafe(failedCode.second) << ", part "
-                           << failedCode.first;
-              }
-            }
-          });
+      if (!executeWithRetry([&]() {
+        return storage_->addVertices(param, value.second, value.first, false, false);
+      })) {
+        success = false;
+        break;
+      }
     }
   }
-  if (!deleteVertices.empty()) {
-    storage_->deleteVertices(param, std::move(deleteVertices))
-        .via(executor_.get())
-        .thenValue([](storage::StorageRpcResponse<storage::cpp2::ExecResponse> rpcResp) {
-          auto completeness = rpcResp.completeness();
-          if (completeness != 100) {
-            const auto& failedCodes = rpcResp.failedParts();
-            for (auto failedCode : failedCodes) {
-              LOG(ERROR) << "delete vertex failed, error "
-                         << apache::thrift::util::enumNameSafe(failedCode.second) << ", part "
-                         << failedCode.first;
-            }
-          }
-        });
+
+  if (success && !deleteVertices.empty()) {
+    if (!executeWithRetry([&]() {
+      return storage_->deleteVertices(param, std::move(deleteVertices));
+    })) {
+      success = false;
+    }
   }
-  if (!edgeMap.empty()) {
+
+  if (success && !edgeMap.empty()) {
     for (const auto& [key, value] : edgeMap) {
-      storage_->addEdges(param, value.second, value.first, false, false)
-          .via(executor_.get())
-          .thenValue([](storage::StorageRpcResponse<storage::cpp2::ExecResponse> rpcResp) {
-            auto completeness = rpcResp.completeness();
-            if (completeness != 100) {
-              const auto& failedCodes = rpcResp.failedParts();
-              for (auto failedCode : failedCodes) {
-                LOG(ERROR) << "add edge failed, error "
-                           << apache::thrift::util::enumNameSafe(failedCode.second) << ", part "
-                           << failedCode.first;
-              }
-            }
-          });
+      if (!executeWithRetry([&]() {
+        return storage_->addEdges(param, value.second, value.first, false, false);
+      })) {
+        success = false;
+        break;
+      }
     }
   }
-  if (!deleteEdges.empty()) {
-    storage_->deleteEdges(param, std::move(deleteEdges))
-        .via(executor_.get())
-        .thenValue([](storage::StorageRpcResponse<storage::cpp2::ExecResponse> rpcResp) {
-          auto completeness = rpcResp.completeness();
-          if (completeness != 100) {
-            const auto& failedCodes = rpcResp.failedParts();
-            for (auto failedCode : failedCodes) {
-              LOG(ERROR) << "delete edge failed, error "
-                         << apache::thrift::util::enumNameSafe(failedCode.second) << ", part "
-                         << failedCode.first;
-            }
-          }
-        });
+
+  if (success && !deleteEdges.empty()) {
+    if (!executeWithRetry([&]() {
+      return storage_->deleteEdges(param, std::move(deleteEdges));
+    })) {
+      success = false;
+    }
   }
-  return true;
+
+  return success;
 }
 
 void NebulaListener::updateWriteSpace() {

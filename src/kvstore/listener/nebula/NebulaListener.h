@@ -62,7 +62,6 @@ class NebulaListener : public ESListener {
   std::unique_ptr<meta::MetaClient> metaClient_;
   std::unique_ptr<storage::StorageClient> storage_;
   int writeSpaceId_;
-  std::unique_ptr<folly::Executor> executor_;
 };
 
 }  // namespace kvstore
