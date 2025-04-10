@@ -1,11 +1,12 @@
 FROM vesoft/nebula-dev:centos7 as builder
 
-ARG BRANCH=master
+ENV BUILD_IN_DOCKER TRUE
+ARG VERSION=
 
 COPY . /home/nebula/BUILD
 
 RUN cd /home/nebula/BUILD/package \
-  && ./package.sh -n OFF -b ${BRANCH} -s TRUE
+  && ./package.sh -v "${VERSION}"
 
 FROM centos:7
 
