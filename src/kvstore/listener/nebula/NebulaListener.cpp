@@ -34,7 +34,8 @@ void NebulaListener::init() {
   // Load data try 3 time
   bool loadDataOk = metaClient_->waitForMetadReady(3);
   if (loadDataOk) {
-    storage_ = std::make_unique<storage::StorageClient>(std::move(ioThreadPool), metaClient_.get());
+    auto threadPool = std::make_shared<folly::IOThreadPoolExecutor>(16);
+    storage_ = std::make_unique<storage::StorageClient>(threadPool, metaClient_.get());
   }
   ESListener::init();
   updateWriteSpace();
