@@ -80,6 +80,17 @@ bool NebulaListener::applyBatch(const BatchHolder& batch) {
         continue;
       }
       auto writeTagId = writeTagIdRet.value();
+
+      auto vertexId = NebulaKeyUtils::getVertexId(vIdLen_, key);
+      nebula::Value vid;
+      if (isIntVid_) {
+        int64_t v1;
+        memcpy(reinterpret_cast<void*>(&v1), vertexId.begin(), sizeof(int64_t));
+        vid = Value(v1);
+      } else {
+        vid = vertexId.subpiece(0, vertexId.find_first_of('\0')).toString();
+      }
+
       if (type == BatchLogType::OP_BATCH_PUT) {
         reader = RowReaderWrapper::getTagPropReader(schemaMan_, spaceId_, tagId, value);
         if (reader == nullptr) {
@@ -98,8 +109,6 @@ bool NebulaListener::applyBatch(const BatchHolder& batch) {
             tagPropNamesRef[writeTagId].emplace_back(reader->getSchema()->getFieldName(i));
           }
         }
-        std::string vid = NebulaKeyUtils::getVertexId(vIdLen_, key).toString();
-        vid = normalizeVid(vid);
         std::vector<Value> props;
         for (size_t i = 0; i < reader->numFields(); ++i) {
           props.emplace_back(reader->getValueByIndex(i));
@@ -114,8 +123,6 @@ bool NebulaListener::applyBatch(const BatchHolder& batch) {
         newVertex.tags_ref() = std::move(newTags);
         verticesRef.emplace_back(newVertex);
       } else if (type == BatchLogType::OP_BATCH_REMOVE) {
-        std::string vid = NebulaKeyUtils::getVertexId(vIdLen_, key).toString();
-        vid = normalizeVid(vid);
         deleteVertices.emplace_back(Value(std::move(vid)));
       }
     } else {
@@ -135,6 +142,21 @@ bool NebulaListener::applyBatch(const BatchHolder& batch) {
         continue;
       }
       auto writeEdgeType = writeEdgeTypeRet.value();
+      auto srcId = NebulaKeyUtils::getSrcId(vIdLen_, key);
+      auto dstId = NebulaKeyUtils::getDstId(vIdLen_, key);
+      nebula::Value src;
+      nebula::Value dst;
+      if (isIntVid_) {
+        int64_t v1;
+        memcpy(reinterpret_cast<void*>(&v1), srcId.begin(), sizeof(int64_t));
+        src = Value(v1);
+        int64_t v2;
+        memcpy(reinterpret_cast<void*>(&v2), dstId.begin(), sizeof(int64_t));
+        dst = Value(v2);
+      } else {
+        src = srcId.subpiece(0, srcId.find_first_of('\0')).toString();
+        dst = dstId.subpiece(0, dstId.find_first_of('\0')).toString();
+      }
       if (type == BatchLogType::OP_BATCH_PUT) {
         reader = RowReaderWrapper::getEdgePropReader(schemaMan_, spaceId_, edgeType, value);
         if (reader == nullptr) {
@@ -153,8 +175,6 @@ bool NebulaListener::applyBatch(const BatchHolder& batch) {
             edgePropNameRef.emplace_back(reader->getSchema()->getFieldName(i));
           }
         }
-        std::string src = NebulaKeyUtils::getSrcId(vIdLen_, key).toString();
-        std::string dst = NebulaKeyUtils::getDstId(vIdLen_, key).toString();
         int rank = 0;
         rank = NebulaKeyUtils::getRank(vIdLen_, key);
         std::vector<Value> props;
@@ -163,18 +183,22 @@ bool NebulaListener::applyBatch(const BatchHolder& batch) {
         }
         nebula::storage::cpp2::NewEdge newEdge;
         nebula::storage::cpp2::EdgeKey edgeKey;
-        edgeKey.src_ref() = normalizeVid(src);
+        edgeKey.src_ref() = src;
         edgeKey.edge_type_ref() = writeEdgeType;
         edgeKey.ranking_ref() = rank;
-        edgeKey.dst_ref() = normalizeVid(dst);
+        edgeKey.dst_ref() = dst;
+        newEdge.key_ref() = edgeKey;
+        newEdge.props_ref() = props;
+        edgesRef.emplace_back(newEdge);
+
+        edgeKey.src_ref() = std::move(dst);
+        edgeKey.dst_ref() = std::move(src);
+        edgeKey.ranking_ref() = rank;
+        edgeKey.edge_type_ref() = -writeEdgeType;
         newEdge.key_ref() = std::move(edgeKey);
         newEdge.props_ref() = std::move(props);
-        edgesRef.emplace_back(newEdge);
+        edgesRef.emplace_back(std::move(newEdge));
       } else if (type == BatchLogType::OP_BATCH_REMOVE) {
-        std::string src = NebulaKeyUtils::getSrcId(vIdLen_, key).toString();
-        std::string dst = NebulaKeyUtils::getDstId(vIdLen_, key).toString();
-        src = normalizeVid(src);
-        dst = normalizeVid(dst);
         int rank = 0;
         storage::cpp2::EdgeKey edgeKey;
         edgeKey.src_ref() = src;
