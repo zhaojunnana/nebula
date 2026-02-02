@@ -1,0 +1,12 @@
+Log file created at: 2026/02/02 19:43:15
+Running on machine: 709056d3bd55
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+E20260202 19:43:15.365984 1426600 QueryInstance.cpp:151] Host not enough!, query: create space basketballplayer(partition_num=10,replica_factor=1,vid_type=fixed_string(32));
+E20260202 19:48:10.499704 1426601 QueryInstance.cpp:151] SyntaxError: syntax error near `host', query: add host;
+E20260202 19:49:02.074082 1426601 QueryInstance.cpp:151] SyntaxError: syntax error near `host', query: add host 127.0.0.1:9779
+E20260202 19:49:30.265452 1426601 QueryInstance.cpp:151] SyntaxError: syntax error near `host', query: add host 127.0.0.1:9779
+E20260202 19:59:09.825058 1426597 QueryInstance.cpp:151] SyntaxError: syntax error near `bash', query: bash --help
+E20260202 20:17:53.529361 1426618 MetaClient.cpp:772] Send request to "127.0.0.1":9559, exceed retry limit
+E20260202 20:17:53.529457 1426618 MetaClient.cpp:773] RpcResponse exception: apache::thrift::transport::TTransportException: Dropping unsent request. Connection closed after: apache::thrift::transport::TTransportException: AsyncSocketException: connect failed, type = Socket not open, errno = 111 (Connection refused): Connection refused
+E20260202 20:17:53.529587 1426620 MetaClient.cpp:192] Heartbeat failed, status:RPC failure in MetaClient: apache::thrift::transport::TTransportException: Dropping unsent request. Connection closed after: apache::thrift::transport::TTransportException: AsyncSocketException: connect failed, type = Socket not open, errno = 111 (Connect

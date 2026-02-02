@@ -1,0 +1,7 @@
+Log file created at: 2026/02/02 20:17:52
+Running on machine: 709056d3bd55
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+W20260202 20:17:52.661866 1431221 FileBasedWal.cpp:174] Failed to read the last log length from "0000000000000000001.wal" (38): Function not implemented
+W20260202 20:17:52.670496 1431221 FileBasedWal.cpp:392] LogId is not consistent 4995706214044290883 1990
+W20260202 20:17:52.670536 1431221 FileBasedWal.cpp:431] Invalid wal /usr/local/nebula/data/meta0/nebula/0/wal/0/0000000000000000001.wal, truncate from offset 89416

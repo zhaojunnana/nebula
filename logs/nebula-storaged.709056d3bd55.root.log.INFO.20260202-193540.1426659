@@ -1,0 +1,319 @@
+Log file created at: 2026/02/02 19:35:40
+Running on machine: 709056d3bd55
+Running duration (h:mm:ss): 0:00:00
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+I20260202 19:35:40.933245 1426659 StorageDaemon.cpp:132] localhost = "127.0.0.1":9779
+I20260202 19:35:40.934196 1426659 StorageDaemon.cpp:147] data path= /usr/local/nebula/data/storage
+I20260202 19:35:40.987828 1426659 MetaClient.cpp:80] Create meta client to "127.0.0.1":9559
+I20260202 19:35:40.987896 1426659 MetaClient.cpp:81] root path: /usr/local/nebula, data path size: 1
+W20260202 19:35:40.987985 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:35:44.016403 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:35:44.016808 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:35:54.016927 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:35:57.029183 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:35:57.029263 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:36:07.029412 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:36:10.042302 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:36:10.042405 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:36:20.042522 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:36:23.056126 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:36:23.056211 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:36:33.056389 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:36:36.064883 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:36:36.064965 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:36:46.065135 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:36:49.073011 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:36:49.073092 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:36:59.073246 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:37:02.081269 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:37:02.081369 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:37:12.081550 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:37:15.087111 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:37:15.087167 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:37:25.087330 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:37:28.095697 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:37:28.095800 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:37:38.095963 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:37:41.104259 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:37:41.104344 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:37:51.104530 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:37:54.112613 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:37:54.112696 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:38:04.112874 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:38:07.120962 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:38:07.121054 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:38:17.121205 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:38:20.128453 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:38:20.128535 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:38:30.128712 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:38:33.136124 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:38:33.136200 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:38:43.136363 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:38:46.144855 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:38:46.144948 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:38:56.145128 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:38:59.153612 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:38:59.153697 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:39:09.153846 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:39:12.161600 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:39:12.161680 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:39:22.161839 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:39:25.168283 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:39:25.168383 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:39:35.168491 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:39:38.175884 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:39:38.175971 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:39:48.176091 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:39:51.183979 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:39:51.184060 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:40:01.184207 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:40:04.191886 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:40:04.191972 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:40:14.192169 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:40:17.199350 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:40:17.199409 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:40:27.199558 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:40:30.207181 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:40:30.207278 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:40:40.207412 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:40:43.214689 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:40:43.214776 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:40:53.214892 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:40:56.221580 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:40:56.221659 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:41:06.221824 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:41:09.228967 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:41:09.229049 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:41:19.229230 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:41:22.236742 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:41:22.236801 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:41:32.236953 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:41:35.244143 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:41:35.244228 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:41:45.244343 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:41:48.252260 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:41:48.252362 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:41:58.252487 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:42:01.259969 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:42:01.260053 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:42:11.260176 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:42:14.267570 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:42:14.267655 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:42:24.267808 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:42:27.275240 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:42:27.275341 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:42:37.275496 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:42:40.282792 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:42:40.282871 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:42:50.283033 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:42:53.290676 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:42:53.290766 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:43:03.290941 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:43:06.298655 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:43:06.298764 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:43:16.298931 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:43:19.306573 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:43:19.306658 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:43:29.306834 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:43:32.314004 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:43:32.314079 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:43:42.314253 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:43:45.321082 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:43:45.321166 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:43:55.321280 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:43:58.328718 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:43:58.328783 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:44:08.328940 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:44:11.336810 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:44:11.336911 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:44:21.337025 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:44:24.343704 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:44:24.343788 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:44:34.343900 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:44:37.351404 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:44:37.351485 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:44:47.351642 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:44:50.359562 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:44:50.359645 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:45:00.359799 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:45:03.366532 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:45:03.366642 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:45:13.366784 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:45:16.373880 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:45:16.373957 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:45:26.374083 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:45:29.381286 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:45:29.381383 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:45:39.381561 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:45:42.388692 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:45:42.388787 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:45:52.388896 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:45:55.396036 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:45:55.396117 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:46:05.396225 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:46:08.403802 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:46:08.403888 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:46:18.404017 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:46:21.411756 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:46:21.411836 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:46:31.412009 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:46:34.419438 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:46:34.419528 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:46:44.419701 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:46:47.427225 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:46:47.427337 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:46:57.427493 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:47:00.435266 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:47:00.435371 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:47:10.435506 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:47:13.443228 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:47:13.443331 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:47:23.443447 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:47:26.450507 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:47:26.450618 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:47:36.450804 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:47:39.458720 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:47:39.458804 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:47:49.458985 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:47:52.465070 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:47:52.465170 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:48:02.465345 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:48:05.470883 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:48:05.470950 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:48:15.471058 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:48:18.479023 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:48:18.479108 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:48:28.479262 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:48:31.486886 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:48:31.486968 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:48:41.487097 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:48:44.493355 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:48:44.493429 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:48:54.493592 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:48:57.499344 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:48:57.499428 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:49:07.499542 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:49:10.506835 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:49:10.506919 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:49:20.507088 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:49:23.514650 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:49:23.514731 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:49:33.514899 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:49:36.522586 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:49:36.522683 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:49:46.522855 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:49:49.529496 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:49:49.529567 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:49:59.529676 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:50:02.537160 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:50:02.537240 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:50:12.537356 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:50:15.545133 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:50:15.545217 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:50:25.545370 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:50:28.551553 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:50:28.551640 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:50:38.551772 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:50:41.559564 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:50:41.559657 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:50:51.559840 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:50:54.566836 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:50:54.566916 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:51:04.567076 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:51:07.574962 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:51:07.575070 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:51:17.575184 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:51:20.582406 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:51:20.582481 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:51:30.582607 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:51:33.588546 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:51:33.588629 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:51:43.588801 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:51:46.596554 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:51:46.596642 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:51:56.596827 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:51:59.604419 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:51:59.604521 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:52:09.604666 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:52:12.612174 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:52:12.612262 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:52:22.612421 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:52:25.619659 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:52:25.619736 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:52:35.619851 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:52:38.627185 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:52:38.627269 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:52:48.627378 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:52:51.634498 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:52:51.634578 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:53:01.634752 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:53:04.642413 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:53:04.642484 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:53:14.642637 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:53:17.649861 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:53:17.649945 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:53:27.650122 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:53:30.657230 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:53:30.657322 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:53:40.657449 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:53:43.663625 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:53:43.663734 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:53:53.663854 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:53:56.671145 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:53:56.671252 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:54:06.671358 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+E20260202 19:54:09.679108 1426659 MetaClient.cpp:112] Heartbeat failed, status:Machine not existed!
+I20260202 19:54:09.679188 1426659 MetaClient.cpp:137] Waiting for the metad to be ready!
+W20260202 19:54:19.679355 1426659 FileBasedClusterIdMan.cpp:43] Open file failed, error No such file or directory
+I20260202 19:54:22.688256 1426743 MetaClient.cpp:2672] Persist the cluster Id from metad 7927630793329625510
+I20260202 19:54:22.688382 1426743 FileBasedClusterIdMan.cpp:21] Remove the existed file cluster.id
+I20260202 19:54:22.688598 1426743 FileBasedClusterIdMan.cpp:34] Persist clusterId 7927630793329625510 succeeded!
+I20260202 19:54:22.696049 1426659 MetaClient.cpp:3263] Load leader of "127.0.0.1":9779 in 0 space
+I20260202 19:54:22.696108 1426659 MetaClient.cpp:3269] Load leader ok
+I20260202 19:54:22.699463 1426659 MetaClient.cpp:162] Register time task for heartbeat!
+I20260202 19:54:22.699585 1426659 StorageServer.cpp:250] Init schema manager
+I20260202 19:54:22.699618 1426659 StorageServer.cpp:253] Init index manager
+I20260202 19:54:22.699633 1426659 StorageServer.cpp:256] Init kvstore
+I20260202 19:54:22.699707 1426659 NebulaStore.cpp:48] Start the raft service...
+I20260202 19:54:22.703907 1426659 NebulaSnapshotManager.cpp:25] Send snapshot is rate limited to 10485760 for each part by default
+I20260202 19:54:22.707759 1426659 RaftexService.cpp:46] Start raft service on 9780
+I20260202 19:54:22.708092 1426659 NebulaStore.cpp:82] Scan the local path, and init the spaces_
+E20260202 19:54:22.708159 1426659 FileUtils.cpp:377] Failed to read the directory "/usr/local/nebula/data/storage/nebula" (2): No such file or directory
+I20260202 19:54:22.708276 1426659 NebulaStore.cpp:292] Init data from partManager for "127.0.0.1":9779
+I20260202 19:54:22.708372 1426659 NebulaStore.cpp:75] Register handler...
+I20260202 19:54:22.708402 1426659 StorageServer.cpp:259] Init LogMonitor
+I20260202 19:54:22.708922 1426659 StorageServer.cpp:126] Starting Storage HTTP Service
+I20260202 19:54:22.711025 1426659 StorageServer.cpp:130] Http Thread Pool started
+I20260202 19:54:22.718263 1428450 WebService.cpp:124] Web service started on HTTP[19779]
+I20260202 19:54:22.719606 1426659 RocksEngineConfig.cpp:371] Emplace rocksdb option max_bytes_for_level_base=268435456
+I20260202 19:54:22.719689 1426659 RocksEngineConfig.cpp:371] Emplace rocksdb option max_write_buffer_number=4
+I20260202 19:54:22.719712 1426659 RocksEngineConfig.cpp:371] Emplace rocksdb option write_buffer_size=67108864
+I20260202 19:54:22.720283 1426659 RocksEngineConfig.cpp:371] Emplace rocksdb option block_size=8192
+I20260202 19:54:22.943027 1426659 RocksEngine.cpp:107] open rocksdb on /usr/local/nebula/data/storage/nebula/0/data
+I20260202 19:54:22.943336 1426659 AdminTaskManager.cpp:22] max concurrent subtasks: 10
+I20260202 19:54:22.944001 1428474 AdminTaskManager.cpp:224] waiting for incoming task
+I20260202 19:54:22.944432 1426659 AdminTaskManager.cpp:40] exit AdminTaskManager::init()
+I20260202 19:54:22.994657 1426659 MemoryTracker.h:106] MemoryTracker update limit 8589934592.000GiB -> 50.043GiB
+I20260202 19:54:22.994760 1426659 MemoryUtils.cpp:171] MemoryTracker set static ratio: 0.8
+I20260202 19:56:03.473476 1428439 MetaClient.cpp:3263] Load leader of "127.0.0.1":9779 in 0 space
+I20260202 19:56:03.473557 1428439 MetaClient.cpp:3269] Load leader ok
+I20260202 19:56:03.473832 1428439 NebulaStore.cpp:417] Create data space 2
+I20260202 19:56:03.476378 1428826 RocksEngineConfig.cpp:371] Emplace rocksdb option max_bytes_for_level_base=268435456
+I20260202 19:56:03.476436 1428826 RocksEngineConfig.cpp:371] Emplace rocksdb option max_write_buffer_number=4
+I20260202 19:56:03.476457 1428826 RocksEngineConfig.cpp:371] Emplace rocksdb option write_buffer_size=67108864
+I20260202 19:56:03.476867 1428826 RocksEngineConfig.cpp:371] Emplace rocksdb option block_size=8192
+I20260202 19:56:03.772164 1428826 RocksEngine.cpp:107] open rocksdb on /usr/local/nebula/data/storage/nebula/2/data
+I20260202 19:56:03.773654 1428439 NebulaStore.cpp:480] Space 2, part 2 has been added, asLearner 0
+I20260202 19:56:03.774422 1428439 NebulaStore.cpp:480] Space 2, part 1 has been added, asLearner 0
+I20260202 19:56:03.775141 1428439 NebulaStore.cpp:480] Space 2, part 3 has been added, asLearner 0
+I20260202 19:56:03.775571 1428439 NebulaStore.cpp:480] Space 2, part 5 has been added, asLearner 0
+I20260202 19:56:03.776336 1428439 NebulaStore.cpp:480] Space 2, part 4 has been added, asLearner 0
+I20260202 19:56:03.777100 1428439 NebulaStore.cpp:480] Space 2, part 9 has been added, asLearner 0
+I20260202 19:56:03.777834 1428439 NebulaStore.cpp:480] Space 2, part 10 has been added, asLearner 0
+I20260202 19:56:03.778251 1428439 NebulaStore.cpp:480] Space 2, part 8 has been added, asLearner 0
+I20260202 19:56:03.779006 1428439 NebulaStore.cpp:480] Space 2, part 7 has been added, asLearner 0
+I20260202 19:56:03.779765 1428439 NebulaStore.cpp:480] Space 2, part 6 has been added, asLearner 0
+I20260202 19:56:23.807232 1428439 MetaClient.cpp:3263] Load leader of "127.0.0.1":9779 in 1 space
+I20260202 19:56:23.807296 1428439 MetaClient.cpp:3269] Load leader ok
+I20260202 19:56:43.841460 1428439 MetaClient.cpp:3263] Load leader of "127.0.0.1":9779 in 1 space
+I20260202 19:56:43.841526 1428439 MetaClient.cpp:3269] Load leader ok
