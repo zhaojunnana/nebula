@@ -56,6 +56,7 @@ class NebulaStore : public KVStore, public Handler {
   FRIEND_TEST(NebulaStoreTest, ThreeCopiesCheckpointTest);
   FRIEND_TEST(NebulaStoreTest, RemoveInvalidSpaceTest);
   friend class ListenerBasicTest;
+  friend class KafkaListenerIntegrationTest;
 
  public:
   /**

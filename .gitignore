@@ -69,3 +69,9 @@ venv/
 #ctags
 .tags
 /.vs
+
+.claude
+.cursorrules
+.specstory
+docs/
+*.pdf
