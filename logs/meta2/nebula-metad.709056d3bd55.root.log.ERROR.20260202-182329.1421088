@@ -1,5 +1,0 @@
-Log file created at: 2026/02/02 18:23:29
-Running on machine: 709056d3bd55
-Running duration (h:mm:ss): 0:00:00
-Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
-E20260202 18:23:29.306885 1421088 FileUtils.cpp:377] Failed to read the directory "/usr/local/nebula/data/meta2/nebula" (2): No such file or directory

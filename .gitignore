@@ -75,3 +75,8 @@ venv/
 .specstory
 docs/
 *.pdf
+data/
+logs/
+.gdb_history
+.gdbinit
+logs*/

@@ -1,6 +1,0 @@
-Log file created at: 2026/02/02 18:23:28
-Running on machine: 709056d3bd55
-Running duration (h:mm:ss): 0:00:00
-Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
-E20260202 18:23:28.063716 1420943 FileUtils.cpp:377] Failed to read the directory "/usr/local/nebula/data/meta1/nebula" (2): No such file or directory
-E20260202 18:23:30.527297 1420943 MetaDaemon.cpp:179] Invalid timezone file `share/resources/date_time_zonespec.csv', exception: `Unable to locate or access the required datafile. Filespec: share/resources/date_time_zonespec.csv'.

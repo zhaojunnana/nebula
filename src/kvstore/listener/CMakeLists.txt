@@ -6,6 +6,8 @@ nebula_add_library(
     listener_obj OBJECT
     Listener.cpp
     elasticsearch/ESListener.cpp
+    kafka/KafkaListener.cpp
+    kafka/KafkaAdapter.cpp
 )
 
 nebula_add_subdirectory(test)

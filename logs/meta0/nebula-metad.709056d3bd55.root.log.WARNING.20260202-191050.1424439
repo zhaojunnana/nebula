@@ -1,5 +1,0 @@
-Log file created at: 2026/02/02 19:10:50
-Running on machine: 709056d3bd55
-Running duration (h:mm:ss): 0:00:00
-Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
-W20260202 19:10:50.306977 1424500 Host.cpp:439] [Port: 9560, Space: 0, Part: 0] [Host: 127.0.0.1:9564] Pasue this host because long time no heartbeat response
