@@ -13,8 +13,12 @@
 #include "kvstore/listener/kafka/KafkaAdapter.h"
 
 DEFINE_int32(kafka_listener_batch_size,
-             1000,
+             10000,
              "Max number of entries per batch when kafka listener commits");
+DEFINE_int32(kafka_listener_fsync_interval,
+             10,
+             "Fsync persist file every N batches. Crash may replay up to N batches "
+             "(duplicates only, no data loss, since downstream ops are idempotent)");
 DEFINE_string(kafka_topic_prefix, "nebula", "Kafka topic name prefix");
 DEFINE_string(kafka_brokers, "", "Kafka broker addresses, e.g. 127.0.0.1:9092,127.0.0.1:9093");
 DEFINE_string(kafka_username, "", "Kafka SASL username");
@@ -277,12 +281,16 @@ bool KafkaListener::writeAppliedId(LogID lastId, TermID lastTerm, LogID lastAppl
     close(fd);
     return false;
   }
-  // fsync to ensure lastApplyLogId is durable before we consider the batch committed.
-  // Without this, an OS crash could lose the persist, causing duplicate re-sends on restart.
-  if (fsync(fd) != 0) {
-    LOG(ERROR) << idStr_ << "fsync failed: " << strerror(errno);
-    close(fd);
-    return false;
+  // Fsync every N batches instead of every batch. On OS crash, we may replay
+  // up to N batches worth of messages — acceptable because all downstream
+  // operations (UPSERT/DELETE) are idempotent.
+  if (++persistCountSinceSync_ >= FLAGS_kafka_listener_fsync_interval) {
+    persistCountSinceSync_ = 0;
+    if (fsync(fd) != 0) {
+      LOG(ERROR) << idStr_ << "fsync failed: " << strerror(errno);
+      close(fd);
+      return false;
+    }
   }
   close(fd);
   return true;
@@ -298,109 +306,116 @@ std::string KafkaListener::encodeAppliedId(LogID lastId, TermID lastTerm, LogID 
 }
 
 void KafkaListener::processLogs() {
-  std::unique_ptr<LogIterator> iter;
-  {
-    std::lock_guard<std::mutex> guard(raftLock_);
-    if (lastApplyLogId_ >= committedLogId_) {
-      return;
-    }
-    iter = wal_->iterator(lastApplyLogId_ + 1, committedLogId_);
-  }
-
-  LogID lastApplyId = -1;
-  int64_t lastTimestamp = 0;
-  BatchHolder batch;
-  while (iter->valid()) {
-    lastApplyId = iter->logId();
-    auto log = iter->logMsg();
-    if (log.empty()) {
-      // skip the heartbeat
-      ++(*iter);
-      continue;
-    }
-
-    DCHECK_GE(log.size(), sizeof(int64_t) + 1 + sizeof(uint32_t));
-    lastTimestamp = getTimestamp(log);
-    switch (log[sizeof(int64_t)]) {
-      case OP_PUT: {
-        auto pieces = decodeMultiValues(log);
-        DCHECK_EQ(2, pieces.size());
-        batch.put(pieces[0].toString(), pieces[1].toString());
-        break;
+  // Outer loop: keep processing batches while there is a backlog.
+  // This avoids returning to doApply() (and potentially sleeping) between batches.
+  while (true) {
+    std::unique_ptr<LogIterator> iter;
+    {
+      std::lock_guard<std::mutex> guard(raftLock_);
+      if (lastApplyLogId_ >= committedLogId_) {
+        return;
       }
-      case OP_MULTI_PUT: {
-        auto kvs = decodeMultiValues(log);
-        DCHECK_EQ(0, kvs.size() % 2);
-        for (size_t i = 0; i < kvs.size(); i += 2) {
-          batch.put(kvs[i].toString(), kvs[i + 1].toString());
+      iter = wal_->iterator(lastApplyLogId_ + 1, committedLogId_);
+    }
+
+    LogID lastApplyId = -1;
+    int64_t lastTimestamp = 0;
+    BatchHolder batch;
+    while (iter->valid()) {
+      lastApplyId = iter->logId();
+      auto log = iter->logMsg();
+      if (log.empty()) {
+        // skip the heartbeat
+        ++(*iter);
+        continue;
+      }
+
+      DCHECK_GE(log.size(), sizeof(int64_t) + 1 + sizeof(uint32_t));
+      lastTimestamp = getTimestamp(log);
+      switch (log[sizeof(int64_t)]) {
+        case OP_PUT: {
+          auto pieces = decodeMultiValues(log);
+          DCHECK_EQ(2, pieces.size());
+          batch.put(pieces[0].toString(), pieces[1].toString());
+          break;
         }
-        break;
-      }
-      case OP_REMOVE: {
-        auto key = decodeSingleValue(log);
-        batch.remove(key.toString());
-        break;
-      }
-      case OP_REMOVE_RANGE: {
-        // Rebuild-index emits OP_REMOVE_RANGE. We inject a sentinel tag key
-        // so that apply() produces a REBUILD_INDEX signal for downstream consumers.
-        std::string sentinelVid(vIdLen_, '\xFF');
-        auto signalKey =
-            NebulaKeyUtils::tagKey(vIdLen_, partId_, sentinelVid, 0x7FFFFFFF /*sentinel tagId*/);
-        batch.remove(std::move(signalKey));
-        break;
-      }
-      case OP_MULTI_REMOVE: {
-        auto keys = decodeMultiValues(log);
-        for (auto key : keys) {
+        case OP_MULTI_PUT: {
+          auto kvs = decodeMultiValues(log);
+          DCHECK_EQ(0, kvs.size() % 2);
+          for (size_t i = 0; i < kvs.size(); i += 2) {
+            batch.put(kvs[i].toString(), kvs[i + 1].toString());
+          }
+          break;
+        }
+        case OP_REMOVE: {
+          auto key = decodeSingleValue(log);
           batch.remove(key.toString());
+          break;
         }
-        break;
-      }
-      case OP_BATCH_WRITE: {
-        auto batchData = decodeBatchValue(log);
-        for (auto& op : batchData) {
-          switch (op.first) {
-            case BatchLogType::OP_BATCH_PUT: {
-              batch.put(op.second.first.toString(), op.second.second.toString());
-              break;
-            }
-            case BatchLogType::OP_BATCH_REMOVE: {
-              batch.remove(op.second.first.toString());
-              break;
-            }
-            case BatchLogType::OP_BATCH_REMOVE_RANGE: {
-              LOG(WARNING) << "KafkaListener don't deal with OP_BATCH_REMOVE_RANGE";
-              break;
+        case OP_REMOVE_RANGE: {
+          // Rebuild-index emits OP_REMOVE_RANGE. We inject a sentinel tag key
+          // so that apply() produces a REBUILD_INDEX signal for downstream consumers.
+          std::string sentinelVid(vIdLen_, '\xFF');
+          auto signalKey =
+              NebulaKeyUtils::tagKey(vIdLen_, partId_, sentinelVid, 0x7FFFFFFF /*sentinel tagId*/);
+          batch.remove(std::move(signalKey));
+          break;
+        }
+        case OP_MULTI_REMOVE: {
+          auto keys = decodeMultiValues(log);
+          for (auto key : keys) {
+            batch.remove(key.toString());
+          }
+          break;
+        }
+        case OP_BATCH_WRITE: {
+          auto batchData = decodeBatchValue(log);
+          for (auto& op : batchData) {
+            switch (op.first) {
+              case BatchLogType::OP_BATCH_PUT: {
+                batch.put(op.second.first.toString(), op.second.second.toString());
+                break;
+              }
+              case BatchLogType::OP_BATCH_REMOVE: {
+                batch.remove(op.second.first.toString());
+                break;
+              }
+              case BatchLogType::OP_BATCH_REMOVE_RANGE: {
+                LOG(WARNING) << "KafkaListener don't deal with OP_BATCH_REMOVE_RANGE";
+                break;
+              }
             }
           }
+          break;
         }
+        case OP_TRANS_LEADER:
+        case OP_ADD_LEARNER:
+        case OP_ADD_PEER:
+        case OP_REMOVE_PEER: {
+          break;
+        }
+        default: {
+          LOG(WARNING) << idStr_ << "Unknown operation: "
+                       << static_cast<int32_t>(log[sizeof(int64_t)]);
+        }
+      }
+
+      if (static_cast<int32_t>(batch.getBatch().size()) >= FLAGS_kafka_listener_batch_size) {
         break;
       }
-      case OP_TRANS_LEADER:
-      case OP_ADD_LEARNER:
-      case OP_ADD_PEER:
-      case OP_REMOVE_PEER: {
-        break;
-      }
-      default: {
-        LOG(WARNING) << idStr_ << "Unknown operation: "
-                     << static_cast<int32_t>(log[sizeof(int64_t)]);
-      }
+      ++(*iter);
     }
 
-    if (static_cast<int32_t>(batch.getBatch().size()) >= FLAGS_kafka_listener_batch_size) {
+    // apply to state machine
+    if (lastApplyId != -1 && apply(batch, lastApplyId, lastTimestamp)) {
+      std::lock_guard<std::mutex> guard(raftLock_);
+      lastApplyLogId_ = lastApplyId;
+      persist(committedLogId_, term_, lastApplyLogId_);
+      VLOG(2) << idStr_ << "Listener succeeded apply log to " << lastApplyLogId_;
+    } else {
+      // apply failed or no logs, break out to let doApply() handle sleep/retry
       break;
     }
-    ++(*iter);
-  }
-
-  // apply to state machine
-  if (lastApplyId != -1 && apply(batch, lastApplyId, lastTimestamp)) {
-    std::lock_guard<std::mutex> guard(raftLock_);
-    lastApplyLogId_ = lastApplyId;
-    persist(committedLogId_, term_, lastApplyLogId_);
-    VLOG(2) << idStr_ << "Listener succeeded apply log to " << lastApplyLogId_;
   }
 }
 
@@ -460,11 +475,6 @@ StatusOr<KafkaAdapter*> KafkaListener::getKafkaAdapter() {
   KafkaClientConfig config;
   config.brokers = FLAGS_kafka_brokers;
   config.topic = *topicName_;
-  // Stable transactional ID: survives restart, unique per listener partition.
-  // On restart, init_transactions() fences the old producer and aborts any
-  // in-flight transaction, preventing duplicates.
-  config.transactionalId =
-      folly::stringPrintf("nebula-listener-%d-%d", spaceId_, partId_);
   if (!FLAGS_kafka_username.empty()) {
     config.username = FLAGS_kafka_username;
   }

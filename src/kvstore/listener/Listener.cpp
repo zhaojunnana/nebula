@@ -149,7 +149,16 @@ void Listener::doApply() {
     }
     // todo(doodle): only put is handled, all remove is ignored for now
     processLogs();
-    sleep(FLAGS_listener_commit_interval_secs);
+
+    // Only sleep when caught up; spin immediately when there is a backlog.
+    bool hasBacklog;
+    {
+      std::lock_guard<std::mutex> guard(raftLock_);
+      hasBacklog = lastApplyLogId_ < committedLogId_;
+    }
+    if (!hasBacklog) {
+      sleep(FLAGS_listener_commit_interval_secs);
+    }
   }
 }
 

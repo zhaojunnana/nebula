@@ -1,557 +1,683 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-KafkaListener 端到端测试脚本
-测试目标：不重、不丢、不乱序、QPS、P99延迟
+KafkaListener end-to-end test suite.
 
-环境要求：
-  - NebulaGraph 集群运行中 (graphd:9669, storaged, listener:9789)
-  - Kafka broker 运行中 (127.0.0.1:9092)
-  - Space: basketballplayer (spaceId=2, 10分区, FIXED_STRING(32))
-  - Listener ONLINE, kafka_brokers=127.0.0.1:9092
+Scenarios:
+  correctness  — INSERT + UPDATE + DELETE, verify completeness / no-dup / ordering / payload
+  stress       — sustained concurrent writes, measure listener throughput & P99
+
+Usage:
+  python test_kafka_listener.py correctness [--vertices N] [--edges-per-vertex N]
+  python test_kafka_listener.py stress      [--vertices N] [--writers N] [--duration SEC]
+  python test_kafka_listener.py all         (run both)
+
+Environment:
+  - NebulaGraph cluster (graphd:9669, storaged, listener)
+  - Kafka broker (127.0.0.1:9092)
+  - Space: basketballplayer (spaceId=2, 10 partitions, FIXED_STRING(32))
 """
 
+import argparse
 import json
-import time
-import sys
-import hashlib
+import math
+import os
 import statistics
+import sys
+import time
 import uuid
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
+
 from kafka import KafkaConsumer, TopicPartition
 from nebula3.gclient.net import ConnectionPool
 from nebula3.Config import Config
 
-# ========== 配置 ==========
-GRAPH_HOST = '127.0.0.1'
-GRAPH_PORT = 9669
-KAFKA_BROKER = '127.0.0.1:9092'
-SPACE_NAME = 'basketballplayer'
-SPACE_ID = 2
-TOPIC_PREFIX = 'nebula'
-PARTITION_COUNT = 10
-TEST_BATCH_SIZE = 500       # 每轮测试插入的vertex数
-EDGE_PER_VERTEX = 2         # 每个vertex插入的edge数
-KAFKA_WAIT_SEC = 15         # 等待Kafka消费的超时秒数
-TEST_TAG = 'player'
-TEST_EDGE = 'serve'
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+GRAPH_HOST = os.getenv("NEBULA_GRAPH_HOST", "127.0.0.1")
+GRAPH_PORT = int(os.getenv("NEBULA_GRAPH_PORT", "9669"))
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "127.0.0.1:9092")
+SPACE_NAME = os.getenv("NEBULA_SPACE", "basketballplayer")
+SPACE_ID = int(os.getenv("NEBULA_SPACE_ID", "2"))
+TOPIC_PREFIX = os.getenv("KAFKA_TOPIC_PREFIX", "nebula")
+PARTITION_COUNT = int(os.getenv("NEBULA_PARTITION_COUNT", "10"))
+
+TAG_NAME = "player"
+EDGE_NAME = "serve"
+NGQL_BATCH = 500  # rows per INSERT statement (nGQL limit is ~4MB per statement)
 
 
-def get_nebula_session():
-    config = Config()
-    config.timeout = 30000
-    pool = ConnectionPool()
-    pool.init([(GRAPH_HOST, GRAPH_PORT)], config)
-    session = pool.get_session('root', 'nebula')
-    session.execute(f'USE {SPACE_NAME}')
-    return session, pool
+# ---------------------------------------------------------------------------
+# Nebula helpers
+# ---------------------------------------------------------------------------
+class NebulaPool:
+    """Thin wrapper around ConnectionPool for multi-session use."""
+
+    def __init__(self, host=GRAPH_HOST, port=GRAPH_PORT, max_conns=32):
+        cfg = Config()
+        cfg.timeout = 60000
+        cfg.max_connection_pool_size = max_conns
+        self._pool = ConnectionPool()
+        self._pool.init([(host, port)], cfg)
+
+    def session(self):
+        s = self._pool.get_session("root", "nebula")
+        s.execute(f"USE {SPACE_NAME}")
+        return s
+
+    def close(self):
+        self._pool.close()
 
 
-def get_kafka_offsets(topics):
-    """获取每个topic当前的最新offset（作为消费起点）"""
-    consumer = KafkaConsumer(bootstrap_servers=KAFKA_BROKER)
+def _execute(session, ngql):
+    r = session.execute(ngql)
+    if not r.is_succeeded():
+        raise RuntimeError(f"nGQL failed: {r.error_msg()}\n  statement (truncated): {ngql[:200]}")
+    return r
+
+
+# ---------------------------------------------------------------------------
+# Kafka helpers
+# ---------------------------------------------------------------------------
+def _topics():
+    return [f"{TOPIC_PREFIX}_{SPACE_ID}_{i}" for i in range(1, PARTITION_COUNT + 1)]
+
+
+def snapshot_offsets(broker=KAFKA_BROKER):
+    consumer = KafkaConsumer(bootstrap_servers=broker)
     offsets = {}
-    for topic in topics:
-        partitions = consumer.partitions_for_topic(topic)
-        if partitions:
-            tps = [TopicPartition(topic, p) for p in partitions]
+    for topic in _topics():
+        parts = consumer.partitions_for_topic(topic)
+        if parts:
+            tps = [TopicPartition(topic, p) for p in parts]
             end = consumer.end_offsets(tps)
             offsets[topic] = {tp.partition: off for tp, off in end.items()}
     consumer.close()
     return offsets
 
 
-def consume_from_offsets(topics_offsets, timeout_sec=KAFKA_WAIT_SEC):
-    """从指定offset开始消费，收集新增消息"""
-    consumer = KafkaConsumer(
-        bootstrap_servers=KAFKA_BROKER,
-        auto_offset_reset='latest',
-        consumer_timeout_ms=timeout_sec * 1000,
-        value_deserializer=lambda m: m.decode('utf-8', errors='replace'),
-        key_deserializer=lambda m: m.decode('utf-8', errors='replace') if m else None,
-    )
+def consume_after(start_offsets, timeout_sec, broker=KAFKA_BROKER):
+    """Consume all messages produced after *start_offsets*.
 
-    # assign所有分区并seek到起始offset
+    Stops when no new messages arrive for 4 consecutive seconds or *timeout_sec*
+    is exceeded.
+    """
+    consumer = KafkaConsumer(
+        bootstrap_servers=broker,
+        auto_offset_reset="latest",
+        value_deserializer=lambda m: m.decode("utf-8", errors="replace"),
+        key_deserializer=lambda m: m.decode("utf-8", errors="replace") if m else None,
+    )
     all_tps = []
-    for topic, part_offsets in topics_offsets.items():
-        for part, offset in part_offsets.items():
-            tp = TopicPartition(topic, part)
-            all_tps.append((tp, offset))
+    for topic, part_offs in start_offsets.items():
+        for part, off in part_offs.items():
+            all_tps.append((TopicPartition(topic, part), off))
 
     consumer.assign([tp for tp, _ in all_tps])
-    for tp, offset in all_tps:
-        consumer.seek(tp, offset)
+    for tp, off in all_tps:
+        consumer.seek(tp, off)
 
     messages = []
     deadline = time.time() + timeout_sec
+    empty_rounds = 0
     while time.time() < deadline:
         batch = consumer.poll(timeout_ms=2000)
         if batch:
+            empty_rounds = 0
             for tp, records in batch.items():
-                for record in records:
+                for rec in records:
                     messages.append({
-                        'topic': record.topic,
-                        'partition': record.partition,
-                        'offset': record.offset,
-                        'key': record.key,
-                        'value': record.value,
-                        'timestamp': record.timestamp,
+                        "topic": rec.topic,
+                        "partition": rec.partition,
+                        "offset": rec.offset,
+                        "key": rec.key,
+                        "value": rec.value,
+                        "kafka_ts": rec.timestamp,
                     })
         else:
-            # 没有新消息了，再等2秒确认
-            time.sleep(2)
-            batch = consumer.poll(timeout_ms=2000)
-            if not batch:
+            empty_rounds += 1
+            if empty_rounds >= 2:
                 break
-            for tp, records in batch.items():
-                for record in records:
-                    messages.append({
-                        'topic': record.topic,
-                        'partition': record.partition,
-                        'offset': record.offset,
-                        'key': record.key,
-                        'value': record.value,
-                        'timestamp': record.timestamp,
-                    })
-
     consumer.close()
     return messages
 
 
-def run_test():
-    print("=" * 70)
-    print("KafkaListener 端到端测试")
-    print("=" * 70)
-
-    # 生成唯一测试ID，防止和历史数据混淆
-    test_id = uuid.uuid4().hex[:8]
-    print(f"\n[INFO] 测试ID: {test_id}")
-    print(f"[INFO] 测试规模: {TEST_BATCH_SIZE} vertices, {TEST_BATCH_SIZE * EDGE_PER_VERTEX} edges")
-
-    # ========== 阶段1: 记录Kafka当前offset ==========
-    print("\n--- 阶段1: 记录Kafka当前offset ---")
-    topics = [f'{TOPIC_PREFIX}_{SPACE_ID}_{i}' for i in range(1, PARTITION_COUNT + 1)]
-    start_offsets = get_kafka_offsets(topics)
-    total_start = sum(sum(v.values()) for v in start_offsets.values())
-    print(f"[INFO] 各topic当前总offset: {total_start}")
-
-    # ========== 阶段2: 写入测试数据 ==========
-    print("\n--- 阶段2: 写入测试数据到NebulaGraph ---")
-    session, pool = get_nebula_session()
-
-    expected_vertices = set()
-    expected_edges = set()
-    insert_times = []
-
-    # 插入vertex (player tag)
-    batch_size = 50  # 每批50条nGQL
-    vertex_ngql_batches = []
-    current_batch = []
-
-    for i in range(TEST_BATCH_SIZE):
-        vid = f"test_{test_id}_p{i}"
-        name = f"TestPlayer_{test_id}_{i}"
-        age = 20 + (i % 30)
-        current_batch.append(f'"{vid}":("{name}", {age})')
-        expected_vertices.add(vid)
-
-        if len(current_batch) >= batch_size or i == TEST_BATCH_SIZE - 1:
-            ngql = f'INSERT VERTEX {TEST_TAG}(name, age) VALUES ' + ','.join(current_batch)
-            vertex_ngql_batches.append(ngql)
-            current_batch = []
-
-    print(f"[INFO] 即将执行 {len(vertex_ngql_batches)} 批vertex插入...")
-    t0 = time.time()
-    for ngql in vertex_ngql_batches:
-        ts = time.time()
-        r = session.execute(ngql)
-        te = time.time()
-        insert_times.append(te - ts)
-        if not r.is_succeeded():
-            print(f"[ERROR] Vertex插入失败: {r.error_msg()}")
-            sys.exit(1)
-    vertex_insert_time = time.time() - t0
-    print(f"[OK] Vertex插入完成: {TEST_BATCH_SIZE}条, 耗时 {vertex_insert_time:.2f}s")
-
-    # 插入edge (serve edge)
-    edge_ngql_batches = []
-    current_batch = []
-
-    for i in range(TEST_BATCH_SIZE):
-        src = f"test_{test_id}_p{i}"
-        for j in range(EDGE_PER_VERTEX):
-            dst = f"test_{test_id}_p{(i + j + 1) % TEST_BATCH_SIZE}"
-            rank = j
-            start_year = 2000 + (i % 20)
-            end_year = start_year + 5
-            current_batch.append(f'"{src}"->"{dst}"@{rank}:({start_year}, {end_year})')
-            expected_edges.add(f"{src}->{dst}@{rank}")
-
-            if len(current_batch) >= batch_size:
-                ngql = f'INSERT EDGE {TEST_EDGE}(start_year, end_year) VALUES ' + ','.join(current_batch)
-                edge_ngql_batches.append(ngql)
-                current_batch = []
-
-    if current_batch:
-        ngql = f'INSERT EDGE {TEST_EDGE}(start_year, end_year) VALUES ' + ','.join(current_batch)
-        edge_ngql_batches.append(ngql)
-
-    print(f"[INFO] 即将执行 {len(edge_ngql_batches)} 批edge插入...")
-    t0 = time.time()
-    for ngql in edge_ngql_batches:
-        ts = time.time()
-        r = session.execute(ngql)
-        te = time.time()
-        insert_times.append(te - ts)
-        if not r.is_succeeded():
-            print(f"[ERROR] Edge插入失败: {r.error_msg()}")
-            sys.exit(1)
-    edge_insert_time = time.time() - t0
-    print(f"[OK] Edge插入完成: {TEST_BATCH_SIZE * EDGE_PER_VERTEX}条, 耗时 {edge_insert_time:.2f}s")
-
-    total_expected = len(expected_vertices) + len(expected_edges)
-    print(f"[INFO] 预期总消息数: {total_expected} (vertex: {len(expected_vertices)}, edge: {len(expected_edges)})")
-
-    # ========== 阶段3: 等待并消费Kafka消息 ==========
-    print(f"\n--- 阶段3: 等待Kafka消息 (最多{KAFKA_WAIT_SEC}秒) ---")
-    # 给listener时间处理WAL
-    time.sleep(5)
-
-    messages = consume_from_offsets(start_offsets, timeout_sec=KAFKA_WAIT_SEC)
-    print(f"[INFO] 收到 {len(messages)} 条Kafka消息")
-
-    # ========== 阶段4: 解析和验证 ==========
-    print("\n--- 阶段4: 验证结果 ---")
-
-    # 解析JSON
-    parsed_msgs = []
-    parse_errors = 0
-    for msg in messages:
+def parse_messages(raw_messages, test_id):
+    """Parse JSON and filter to this test run only."""
+    parsed, errors = [], 0
+    for msg in raw_messages:
         try:
-            data = json.loads(msg['value'])
-            data['_kafka_topic'] = msg['topic']
-            data['_kafka_partition'] = msg['partition']
-            data['_kafka_offset'] = msg['offset']
-            data['_kafka_ts'] = msg['timestamp']
-            parsed_msgs.append(data)
-        except json.JSONDecodeError:
-            parse_errors += 1
+            d = json.loads(msg["value"])
+        except (json.JSONDecodeError, TypeError):
+            errors += 1
+            continue
+        d["_topic"] = msg["topic"]
+        d["_part"] = msg["partition"]
+        d["_offset"] = msg["offset"]
+        d["_kts"] = msg["kafka_ts"]
+        parsed.append(d)
 
-    if parse_errors > 0:
-        print(f"[WARN] {parse_errors}条消息JSON解析失败")
+    mine = []
+    for m in parsed:
+        t = m.get("type", "")
+        if t == "vertex" and test_id in m.get("vertexId", ""):
+            mine.append(m)
+        elif t == "edge" and test_id in m.get("srcId", ""):
+            mine.append(m)
+        elif t == "signal":
+            pass  # not relevant to test data
+    return mine, parsed, errors
 
-    # 只过滤本次测试的数据（通过test_id识别）
-    test_msgs = []
-    for m in parsed_msgs:
-        if m.get('type') == 'vertex':
-            vid = m.get('vertexId', '')
-            if f'test_{test_id}' in vid:
-                test_msgs.append(m)
-        elif m.get('type') == 'edge':
-            src = m.get('srcId', '')
-            if f'test_{test_id}' in src:
-                test_msgs.append(m)
 
-    print(f"[INFO] 本次测试相关消息: {len(test_msgs)}/{len(parsed_msgs)}")
+# ---------------------------------------------------------------------------
+# Percentile helper
+# ---------------------------------------------------------------------------
+def percentiles(data, *ps):
+    if not data:
+        return [0.0] * len(ps)
+    s = sorted(data)
+    n = len(s)
+    return [s[min(int(n * p), n - 1)] for p in ps]
 
-    # ---------- 4.1 不丢 (Completeness) ----------
-    print("\n  [4.1] 不丢检测 (Completeness)")
-    received_vertices = set()
-    received_edges = set()
-    vertex_msgs = []
-    edge_msgs = []
 
+# ---------------------------------------------------------------------------
+# Verification helpers
+# ---------------------------------------------------------------------------
+class Verdict:
+    def __init__(self):
+        self._rows = []
+
+    def check(self, name, passed, detail=""):
+        self._rows.append((name, passed, detail))
+
+    @property
+    def all_pass(self):
+        return all(p for _, p, _ in self._rows)
+
+    def print_summary(self):
+        for name, passed, detail in self._rows:
+            tag = "PASS" if passed else "FAIL"
+            print(f"  [{tag}] {name}  {detail}")
+
+
+def verify_completeness(test_msgs, expected_vids, expected_edges):
+    rx_v, rx_e = set(), set()
     for m in test_msgs:
-        if m['type'] == 'vertex':
-            vid = m.get('vertexId', '')
-            received_vertices.add(vid)
-            vertex_msgs.append(m)
-        elif m['type'] == 'edge':
-            src = m.get('srcId', '')
-            dst = m.get('dstId', '')
-            rank = m.get('ranking', 0)
-            edge_key = f"{src}->{dst}@{rank}"
-            received_edges.add(edge_key)
-            edge_msgs.append(m)
+        if m["type"] == "vertex":
+            rx_v.add(m.get("vertexId", ""))
+        elif m["type"] == "edge":
+            rx_e.add(f'{m["srcId"]}->{m["dstId"]}@{m.get("ranking", 0)}')
+    miss_v = expected_vids - rx_v
+    miss_e = expected_edges - rx_e
+    return miss_v, miss_e, rx_v, rx_e
 
-    missing_vertices = expected_vertices - received_vertices
-    missing_edges = expected_edges - received_edges
 
-    if missing_vertices:
-        print(f"  [FAIL] 丢失 {len(missing_vertices)} 个vertex")
-        if len(missing_vertices) <= 10:
-            for v in list(missing_vertices)[:10]:
-                print(f"    - {v}")
-    else:
-        print(f"  [PASS] Vertex 完整: {len(received_vertices)}/{len(expected_vertices)}")
-
-    if missing_edges:
-        print(f"  [FAIL] 丢失 {len(missing_edges)} 条edge")
-        if len(missing_edges) <= 10:
-            for e in list(missing_edges)[:10]:
-                print(f"    - {e}")
-    else:
-        print(f"  [PASS] Edge 完整: {len(received_edges)}/{len(expected_edges)}")
-
-    completeness = (len(received_vertices) + len(received_edges)) / total_expected * 100 if total_expected > 0 else 0
-    print(f"  [RESULT] 完整率: {completeness:.2f}%")
-
-    # ---------- 4.2 不重 (No Duplicates) ----------
-    print("\n  [4.2] 不重检测 (No Duplicates)")
-
-    # 按(logId, seq)去重
-    seen_log_seq = defaultdict(int)
+def verify_no_dup(test_msgs):
+    counts = defaultdict(int)
     for m in test_msgs:
-        key = (m.get('_kafka_topic', ''), m.get('logId', ''), m.get('seq', 0))
-        seen_log_seq[key] += 1
+        k = (m.get("_topic", ""), m.get("logId", ""), m.get("seq", 0))
+        counts[k] += 1
+    return {k: v for k, v in counts.items() if v > 1}
 
-    duplicates = {k: v for k, v in seen_log_seq.items() if v > 1}
-    if duplicates:
-        print(f"  [FAIL] 发现 {len(duplicates)} 组重复消息")
-        for k, v in list(duplicates.items())[:5]:
-            print(f"    - topic={k[0]}, logId={k[1]}, seq={k[2]}, count={v}")
-    else:
-        print(f"  [PASS] 无重复消息 (共 {len(seen_log_seq)} 条唯一消息)")
 
-    # 额外: 按vertex/edge维度检查重复
-    vertex_counts = defaultdict(int)
-    for m in vertex_msgs:
-        vid = m.get('vertexId', '')
-        vertex_counts[vid] += 1
-    dup_vertices = {k: v for k, v in vertex_counts.items() if v > 1}
-
-    edge_counts = defaultdict(int)
-    for m in edge_msgs:
-        ek = f"{m.get('srcId', '')}->{m.get('dstId', '')}@{m.get('ranking', 0)}"
-        edge_counts[ek] += 1
-    dup_edges = {k: v for k, v in edge_counts.items() if v > 1}
-
-    if dup_vertices:
-        print(f"  [WARN] {len(dup_vertices)} 个vertex有多条消息（可能是UPDATE重写，非bug）")
-    if dup_edges:
-        print(f"  [WARN] {len(dup_edges)} 条edge有多条消息（可能是UPDATE重写，非bug）")
-
-    # ---------- 4.3 不乱序 (Ordering) ----------
-    print("\n  [4.3] 不乱序检测 (Ordering)")
-
-    # 按topic分组检查logId单调递增
+def verify_ordering(test_msgs):
     by_topic = defaultdict(list)
     for m in test_msgs:
-        by_topic[m.get('_kafka_topic', '')].append(m)
+        by_topic[m.get("_topic", "")].append(m)
 
-    order_violations = 0
+    logid_violations, seq_violations = 0, 0
     for topic, msgs in by_topic.items():
-        # 按kafka offset排序（消息在Kafka中的实际顺序）
-        msgs.sort(key=lambda x: x.get('_kafka_offset', 0))
-        prev_log_id = -1
+        msgs.sort(key=lambda x: x.get("_offset", 0))
+        prev = -1
         for m in msgs:
-            log_id = m.get('logId', 0)
-            if log_id < prev_log_id:
-                order_violations += 1
-                if order_violations <= 3:
-                    print(f"    [VIOLATION] {topic}: logId {prev_log_id} -> {log_id} (乱序)")
-            prev_log_id = log_id
+            lid = m.get("logId", 0)
+            if lid < prev:
+                logid_violations += 1
+            prev = lid
 
-    if order_violations == 0:
-        print(f"  [PASS] 所有分区内logId严格递增 ({len(by_topic)}个分区)")
-    else:
-        print(f"  [FAIL] 发现 {order_violations} 处乱序")
-
-    # 同一logId内seq也应递增
-    seq_violations = 0
-    for topic, msgs in by_topic.items():
         by_logid = defaultdict(list)
         for m in msgs:
-            by_logid[m.get('logId', 0)].append(m)
-
-        for log_id, log_msgs in by_logid.items():
-            log_msgs.sort(key=lambda x: x.get('_kafka_offset', 0))
-            prev_seq = -1
-            for m in log_msgs:
-                seq = m.get('seq', 0)
-                if seq < prev_seq:
+            by_logid[m.get("logId", 0)].append(m)
+        for lid, lms in by_logid.items():
+            lms.sort(key=lambda x: x.get("_offset", 0))
+            ps = -1
+            for m in lms:
+                sq = m.get("seq", 0)
+                if sq < ps:
                     seq_violations += 1
-                prev_seq = seq
+                ps = sq
 
-    if seq_violations == 0:
-        print(f"  [PASS] 同一logId内seq严格递增")
-    else:
-        print(f"  [FAIL] 发现 {seq_violations} 处seq乱序")
+    return logid_violations, seq_violations, by_topic
 
-    # ---------- 4.4 数据正确性 ----------
-    print("\n  [4.4] 数据正确性检测")
 
-    field_errors = 0
-    sample_checked = 0
-    for m in vertex_msgs[:50]:  # 抽检前50条
-        sample_checked += 1
-        if 'properties' not in m:
-            field_errors += 1
-            continue
-        props = m['properties']
-        if 'name' not in props or 'age' not in props:
-            field_errors += 1
-            continue
-        # name应为字符串
-        if not isinstance(props['name'], str):
-            field_errors += 1
-        # age应为整数
-        if not isinstance(props['age'], (int, float)):
-            field_errors += 1
-
-    for m in edge_msgs[:50]:
-        sample_checked += 1
-        if 'properties' not in m:
-            field_errors += 1
-            continue
-        props = m['properties']
-        if 'start_year' not in props or 'end_year' not in props:
-            field_errors += 1
-
-    if field_errors == 0:
-        print(f"  [PASS] 抽检 {sample_checked} 条消息，字段均正确")
-    else:
-        print(f"  [FAIL] 抽检 {sample_checked} 条消息，{field_errors} 条字段异常")
-
-    # 验证metadata字段
-    meta_errors = 0
-    for m in test_msgs[:100]:
-        for field in ['logId', 'timestamp', 'seq', 'spaceId', 'partId']:
-            if field not in m:
-                meta_errors += 1
+def verify_payload(test_msgs):
+    field_err, meta_err, checked = 0, 0, 0
+    for m in test_msgs:
+        checked += 1
+        for f in ("logId", "timestamp", "seq", "spaceId", "partId"):
+            if f not in m:
+                meta_err += 1
                 break
+        if m.get("type") == "vertex" and m.get("graphOperation") in ("UPSERT_VERTEX",):
+            props = m.get("properties")
+            if not props or "name" not in props or "age" not in props:
+                field_err += 1
+            elif not isinstance(props["age"], (int, float)):
+                field_err += 1
+        elif m.get("type") == "edge" and m.get("graphOperation") in ("UPSERT_EDGE",):
+            props = m.get("properties")
+            if not props or "start_year" not in props:
+                field_err += 1
+    return field_err, meta_err, checked
 
-    if meta_errors == 0:
-        print(f"  [PASS] 元数据字段 (logId/timestamp/seq/spaceId/partId) 完整")
-    else:
-        print(f"  [FAIL] {meta_errors} 条消息缺少元数据字段")
 
-    # ========== 阶段5: 性能指标 ==========
-    print("\n--- 阶段5: 性能指标 ---")
+def verify_deletes(test_msgs, expected_del_vids, expected_del_edges):
+    """Check that DELETE_TAG / DELETE_EDGE messages arrived for every deleted entity."""
+    rx_del_v, rx_del_e = set(), set()
+    for m in test_msgs:
+        op = m.get("graphOperation", "")
+        if op == "DELETE_TAG":
+            rx_del_v.add(m.get("vertexId", ""))
+        elif op == "DELETE_EDGE":
+            rx_del_e.add(f'{m["srcId"]}->{m["dstId"]}@{m.get("ranking", 0)}')
+    miss_dv = expected_del_vids - rx_del_v
+    miss_de = expected_del_edges - rx_del_e
+    return miss_dv, miss_de
 
-    total_insert_time = vertex_insert_time + edge_insert_time
-    total_ops = TEST_BATCH_SIZE + TEST_BATCH_SIZE * EDGE_PER_VERTEX
 
-    # 写入QPS（NebulaGraph写入性能）
-    write_qps = total_ops / total_insert_time if total_insert_time > 0 else 0
-    print(f"  写入QPS (NebulaGraph): {write_qps:.0f} ops/s")
+def verify_updates(test_msgs, updated_vids_expected_age):
+    """For UPSERT_VERTEX of updated vids, the *last* message should carry the new age."""
+    last_by_vid = {}
+    for m in test_msgs:
+        if m.get("type") == "vertex" and m.get("graphOperation") == "UPSERT_VERTEX":
+            vid = m.get("vertexId", "")
+            if vid in updated_vids_expected_age:
+                last_by_vid[vid] = m
 
-    # 写入延迟分布
-    if insert_times:
-        insert_times_ms = [t * 1000 for t in insert_times]
-        p50 = statistics.median(insert_times_ms)
-        p90 = sorted(insert_times_ms)[int(len(insert_times_ms) * 0.9)]
-        p99 = sorted(insert_times_ms)[int(len(insert_times_ms) * 0.99)]
-        p_max = max(insert_times_ms)
-        print(f"  写入延迟 (每批{batch_size}条):")
-        print(f"    P50:  {p50:.2f}ms")
-        print(f"    P90:  {p90:.2f}ms")
-        print(f"    P99:  {p99:.2f}ms")
-        print(f"    MAX:  {p_max:.2f}ms")
+    wrong = 0
+    for vid, expected_age in updated_vids_expected_age.items():
+        m = last_by_vid.get(vid)
+        if m is None:
+            wrong += 1
+            continue
+        actual = m.get("properties", {}).get("age")
+        if actual != expected_age:
+            wrong += 1
+    return wrong, len(updated_vids_expected_age)
 
-    # Kafka端到端延迟（从写入到Kafka收到）
-    if test_msgs:
-        kafka_timestamps = [m.get('_kafka_ts', 0) for m in test_msgs if m.get('_kafka_ts', 0) > 0]
-        if kafka_timestamps:
-            kafka_ts_min = min(kafka_timestamps)
-            kafka_ts_max = max(kafka_timestamps)
-            # 消息中的timestamp字段是listener处理时间
-            listener_timestamps = [m.get('timestamp', 0) for m in test_msgs if m.get('timestamp', 0) > 0]
-            if listener_timestamps:
-                # 端到端延迟: Kafka收到时间 - Listener处理时间
-                e2e_latencies = []
-                for m in test_msgs:
-                    lt = m.get('timestamp', 0)
-                    kt = m.get('_kafka_ts', 0)
-                    if lt > 0 and kt > 0:
-                        # listener timestamp可能是秒或毫秒
-                        if lt < 1e12:  # 秒
-                            lt_ms = lt * 1000
-                        else:
-                            lt_ms = lt
-                        latency = kt - lt_ms
-                        if latency >= 0:
-                            e2e_latencies.append(latency)
 
-                if e2e_latencies:
-                    e2e_latencies.sort()
-                    print(f"\n  Listener->Kafka 端到端延迟:")
-                    print(f"    P50:  {statistics.median(e2e_latencies):.0f}ms")
-                    print(f"    P90:  {e2e_latencies[int(len(e2e_latencies) * 0.9)]:.0f}ms")
-                    print(f"    P99:  {e2e_latencies[int(len(e2e_latencies) * 0.99)]:.0f}ms")
-                    print(f"    MAX:  {max(e2e_latencies):.0f}ms")
-                    print(f"    AVG:  {statistics.mean(e2e_latencies):.0f}ms")
+# ---------------------------------------------------------------------------
+# Scenario: correctness
+# ---------------------------------------------------------------------------
+def run_correctness(args):
+    num_v = args.vertices
+    epv = args.edges_per_vertex
+    test_id = uuid.uuid4().hex[:8]
 
-    # Listener处理吞吐
-    if test_msgs:
-        kafka_timestamps = sorted([m.get('_kafka_ts', 0) for m in test_msgs if m.get('_kafka_ts', 0) > 0])
-        if len(kafka_timestamps) >= 2:
-            duration_sec = (kafka_timestamps[-1] - kafka_timestamps[0]) / 1000.0
-            if duration_sec > 0:
-                listener_qps = len(test_msgs) / duration_sec
-                print(f"\n  Listener吞吐: {listener_qps:.0f} msgs/s")
-                print(f"    消息跨度: {duration_sec:.2f}s")
+    print("=" * 72)
+    print(f"Correctness test   id={test_id}   V={num_v}  E={num_v * epv}")
+    print("=" * 72)
 
-    # ========== 阶段6: 每分区详情 ==========
-    print("\n--- 阶段6: 各分区统计 ---")
-    print(f"  {'分区':<10} {'消息数':<10} {'Vertex':<10} {'Edge':<10} {'logId范围':<20}")
-    for topic in sorted(by_topic.keys()):
-        msgs = by_topic[topic]
-        v_count = sum(1 for m in msgs if m.get('type') == 'vertex')
-        e_count = sum(1 for m in msgs if m.get('type') == 'edge')
-        log_ids = [m.get('logId', 0) for m in msgs]
-        log_range = f"{min(log_ids)}-{max(log_ids)}" if log_ids else "N/A"
-        part = topic.split('_')[-1]
-        print(f"  Part-{part:<6} {len(msgs):<10} {v_count:<10} {e_count:<10} {log_range:<20}")
+    pool = NebulaPool()
+    session = pool.session()
 
-    # ========== 总结 ==========
-    print("\n" + "=" * 70)
-    print("测试总结")
-    print("=" * 70)
+    off0 = snapshot_offsets()
+    write_start = time.time()
 
-    all_pass = True
-    results = []
+    # ---- Phase 1: INSERT vertices + edges ----
+    expected_vids = set()
+    expected_edges = set()
 
-    def check(name, passed, detail=""):
-        nonlocal all_pass
-        status = "PASS" if passed else "FAIL"
-        if not passed:
-            all_pass = False
-        results.append((name, status, detail))
-        print(f"  [{status}] {name}  {detail}")
+    buf = []
+    for i in range(num_v):
+        vid = f"t{test_id}_v{i}"
+        expected_vids.add(vid)
+        buf.append(f'"{vid}":("Player_{test_id}_{i}", {20 + i % 40})')
+        if len(buf) >= NGQL_BATCH or i == num_v - 1:
+            _execute(session, f"INSERT VERTEX {TAG_NAME}(name, age) VALUES " + ",".join(buf))
+            buf.clear()
 
-    check("不丢 (Completeness)",
-          len(missing_vertices) == 0 and len(missing_edges) == 0,
-          f"vertex: {len(received_vertices)}/{len(expected_vertices)}, edge: {len(received_edges)}/{len(expected_edges)}")
+    buf = []
+    for i in range(num_v):
+        src = f"t{test_id}_v{i}"
+        for j in range(epv):
+            dst = f"t{test_id}_v{(i + j + 1) % num_v}"
+            expected_edges.add(f"{src}->{dst}@{j}")
+            buf.append(f'"{src}"->"{dst}"@{j}:({2000 + i % 20}, {2010 + i % 20})')
+            if len(buf) >= NGQL_BATCH:
+                _execute(session, f"INSERT EDGE {EDGE_NAME}(start_year, end_year) VALUES " + ",".join(buf))
+                buf.clear()
+    if buf:
+        _execute(session, f"INSERT EDGE {EDGE_NAME}(start_year, end_year) VALUES " + ",".join(buf))
+        buf.clear()
 
-    check("不重 (No Duplicates)",
-          len(duplicates) == 0,
-          f"唯一消息数: {len(seen_log_seq)}")
+    insert_done_ts = time.time()
+    print(f"[INSERT] {num_v} V + {num_v * epv} E  in {insert_done_ts - write_start:.2f}s")
 
-    check("不乱序 (Ordering)",
-          order_violations == 0 and seq_violations == 0,
-          f"logId违规: {order_violations}, seq违规: {seq_violations}")
+    # ---- Phase 2: UPDATE (upsert) a subset ----
+    update_count = max(1, num_v // 5)
+    updated_ages = {}
+    buf = []
+    for i in range(update_count):
+        vid = f"t{test_id}_v{i}"
+        new_age = 99
+        updated_ages[vid] = new_age
+        buf.append(f'"{vid}":("Player_{test_id}_{i}_v2", {new_age})')
+        if len(buf) >= NGQL_BATCH or i == update_count - 1:
+            _execute(session, f"INSERT VERTEX {TAG_NAME}(name, age) VALUES " + ",".join(buf))
+            buf.clear()
 
-    check("数据正确性",
-          field_errors == 0 and meta_errors == 0,
-          f"字段错误: {field_errors}, 元数据错误: {meta_errors}")
+    print(f"[UPDATE] {update_count} vertices updated (age -> 99)")
 
-    check("JSON格式",
-          parse_errors == 0,
-          f"解析失败: {parse_errors}")
+    # ---- Phase 3: DELETE a subset ----
+    delete_v_count = max(1, num_v // 10)
+    delete_v_start = num_v - delete_v_count
+    del_vids = set()
+    del_edges = set()
 
-    print(f"\n  总QPS: {write_qps:.0f} ops/s")
-    print(f"  总耗时: {total_insert_time:.2f}s")
+    buf_v = []
+    for i in range(delete_v_start, num_v):
+        vid = f"t{test_id}_v{i}"
+        del_vids.add(vid)
+        buf_v.append(f'"{vid}"')
+        if len(buf_v) >= NGQL_BATCH or i == num_v - 1:
+            _execute(session, f"DELETE TAG {TAG_NAME} FROM " + ",".join(buf_v))
+            buf_v.clear()
 
-    if all_pass:
-        print("\n  >>> 全部通过 <<<")
-    else:
-        print("\n  >>> 存在失败项，请检查 <<<")
+    buf_e = []
+    for i in range(delete_v_start, num_v):
+        src = f"t{test_id}_v{i}"
+        for j in range(epv):
+            dst = f"t{test_id}_v{(i + j + 1) % num_v}"
+            del_edges.add(f"{src}->{dst}@{j}")
+            buf_e.append(f'"{src}"->"{dst}"@{j}')
+            if len(buf_e) >= NGQL_BATCH:
+                _execute(session, f"DELETE EDGE {EDGE_NAME} " + ",".join(buf_e))
+                buf_e.clear()
+    if buf_e:
+        _execute(session, f"DELETE EDGE {EDGE_NAME} " + ",".join(buf_e))
+        buf_e.clear()
+
+    write_end = time.time()
+    print(f"[DELETE] {len(del_vids)} V + {len(del_edges)} E  "
+          f"total write phase {write_end - write_start:.2f}s")
 
     session.release()
     pool.close()
-    return 0 if all_pass else 1
+
+    # ---- Phase 4: consume Kafka ----
+    wait_sec = max(30, int((write_end - write_start) * 3))
+    print(f"\n[KAFKA] Waiting up to {wait_sec}s for messages ...")
+    time.sleep(3)  # let listener flush last batch
+    raw = consume_after(off0, wait_sec)
+    print(f"[KAFKA] Received {len(raw)} raw messages")
+
+    mine, all_parsed, json_err = parse_messages(raw, test_id)
+    print(f"[KAFKA] {len(mine)} matched test_id / {len(all_parsed)} total parsed / {json_err} json errors")
+
+    # ---- Phase 5: verify ----
+    v = Verdict()
+
+    miss_v, miss_e, rx_v, rx_e = verify_completeness(mine, expected_vids, expected_edges)
+    v.check("Completeness (vertex)",
+            len(miss_v) == 0,
+            f"{len(rx_v)}/{len(expected_vids)}" + (f"  missing: {list(miss_v)[:5]}" if miss_v else ""))
+    v.check("Completeness (edge)",
+            len(miss_e) == 0,
+            f"{len(rx_e)}/{len(expected_edges)}" + (f"  missing: {list(miss_e)[:5]}" if miss_e else ""))
+
+    dups = verify_no_dup(mine)
+    v.check("No duplicates (logId+seq)",
+            len(dups) == 0,
+            f"dups={len(dups)}")
+
+    lid_v, seq_v, by_topic = verify_ordering(mine)
+    v.check("Ordering (logId monotonic)",
+            lid_v == 0, f"violations={lid_v}")
+    v.check("Ordering (seq within logId)",
+            seq_v == 0, f"violations={seq_v}")
+
+    f_err, m_err, checked = verify_payload(mine)
+    v.check("Payload correctness",
+            f_err == 0 and m_err == 0,
+            f"field_err={f_err} meta_err={m_err} checked={checked}")
+
+    v.check("JSON parse",
+            json_err == 0,
+            f"errors={json_err}")
+
+    upd_wrong, upd_total = verify_updates(mine, updated_ages)
+    v.check("Update (last msg has new age)",
+            upd_wrong == 0,
+            f"wrong={upd_wrong}/{upd_total}")
+
+    miss_dv, miss_de = verify_deletes(mine, del_vids, del_edges)
+    v.check("Delete vertex msgs arrived",
+            len(miss_dv) == 0,
+            f"missing={len(miss_dv)}/{len(del_vids)}")
+    v.check("Delete edge msgs arrived",
+            len(miss_de) == 0,
+            f"missing={len(miss_de)}/{len(del_edges)}")
+
+    # ---- Phase 6: per-partition stats ----
+    print(f"\n{'Part':>6} {'Total':>8} {'Vtx':>8} {'Edge':>8} {'Del':>8} {'logId range':>18}")
+    for topic in sorted(by_topic.keys()):
+        msgs = by_topic[topic]
+        nv = sum(1 for m in msgs if m.get("type") == "vertex" and m.get("graphOperation") == "UPSERT_VERTEX")
+        ne = sum(1 for m in msgs if m.get("type") == "edge" and m.get("graphOperation") == "UPSERT_EDGE")
+        nd = sum(1 for m in msgs if m.get("graphOperation", "").startswith("DELETE"))
+        lids = [m.get("logId", 0) for m in msgs]
+        lr = f"{min(lids)}-{max(lids)}" if lids else "N/A"
+        part = topic.rsplit("_", 1)[-1]
+        print(f"  {part:>4} {len(msgs):>8} {nv:>8} {ne:>8} {nd:>8} {lr:>18}")
+
+    print("\n" + "=" * 72)
+    v.print_summary()
+    print("=" * 72)
+    return v.all_pass
 
 
-if __name__ == '__main__':
-    sys.exit(run_test())
+# ---------------------------------------------------------------------------
+# Scenario: stress
+# ---------------------------------------------------------------------------
+def run_stress(args):
+    num_v = args.vertices
+    writers = args.writers
+    duration = args.duration
+    test_id = uuid.uuid4().hex[:8]
+
+    print("=" * 72)
+    print(f"Stress test   id={test_id}   target_V={num_v}  writers={writers}  duration={duration}s")
+    print("=" * 72)
+
+    pool = NebulaPool(max_conns=writers + 4)
+    off0 = snapshot_offsets()
+
+    counter_lock = Lock()
+    total_written = [0]
+    write_latencies = []  # per-statement latency in ms
+    errors = [0]
+    stop_flag = [False]
+
+    def writer_fn(worker_id, chunk_start, chunk_end):
+        s = pool.session()
+        local_lat = []
+        try:
+            buf = []
+            for i in range(chunk_start, chunk_end):
+                if stop_flag[0]:
+                    break
+                vid = f"s{test_id}_w{worker_id}_v{i}"
+                buf.append(f'"{vid}":("Stress_{i}", {i % 60})')
+                if len(buf) >= NGQL_BATCH:
+                    ngql = f"INSERT VERTEX {TAG_NAME}(name, age) VALUES " + ",".join(buf)
+                    t0 = time.monotonic()
+                    try:
+                        _execute(s, ngql)
+                    except RuntimeError as e:
+                        with counter_lock:
+                            errors[0] += 1
+                        buf.clear()
+                        continue
+                    elapsed_ms = (time.monotonic() - t0) * 1000
+                    local_lat.append(elapsed_ms)
+                    with counter_lock:
+                        total_written[0] += len(buf)
+                    buf.clear()
+
+            if buf and not stop_flag[0]:
+                ngql = f"INSERT VERTEX {TAG_NAME}(name, age) VALUES " + ",".join(buf)
+                t0 = time.monotonic()
+                try:
+                    _execute(s, ngql)
+                except RuntimeError:
+                    with counter_lock:
+                        errors[0] += 1
+                else:
+                    elapsed_ms = (time.monotonic() - t0) * 1000
+                    local_lat.append(elapsed_ms)
+                    with counter_lock:
+                        total_written[0] += len(buf)
+        finally:
+            s.release()
+        return local_lat
+
+    chunk = math.ceil(num_v / writers)
+    wall_start = time.monotonic()
+
+    with ThreadPoolExecutor(max_workers=writers) as executor:
+        futures = []
+        for w in range(writers):
+            cs = w * chunk
+            ce = min(cs + chunk, num_v)
+            if cs >= ce:
+                break
+            futures.append(executor.submit(writer_fn, w, cs, ce))
+
+        # Soft time-limit: signal stop after *duration* seconds
+        deadline = time.monotonic() + duration
+        for f in as_completed(futures, timeout=max(duration * 3, 120)):
+            lats = f.result()
+            write_latencies.extend(lats)
+            if time.monotonic() > deadline:
+                stop_flag[0] = True
+
+    wall_elapsed = time.monotonic() - wall_start
+    pool.close()
+
+    print(f"\n[WRITE] {total_written[0]} vertices in {wall_elapsed:.2f}s  "
+          f"= {total_written[0] / wall_elapsed:.0f} v/s  errors={errors[0]}")
+
+    if write_latencies:
+        p50, p90, p99 = percentiles(write_latencies, 0.5, 0.9, 0.99)
+        print(f"[WRITE latency per {NGQL_BATCH}-row batch]  "
+              f"P50={p50:.1f}ms  P90={p90:.1f}ms  P99={p99:.1f}ms  MAX={max(write_latencies):.1f}ms")
+
+    # ---- Consume & measure listener throughput ----
+    wait_sec = max(30, int(wall_elapsed * 2))
+    print(f"\n[KAFKA] Waiting up to {wait_sec}s ...")
+    time.sleep(3)
+    raw = consume_after(off0, wait_sec)
+    mine, _, _ = parse_messages(raw, test_id)
+    print(f"[KAFKA] {len(mine)} messages for this test run  (total raw: {len(raw)})")
+
+    if len(mine) < 2:
+        print("[WARN] Too few messages to compute throughput")
+        return True
+
+    # Listener throughput: messages span in Kafka timestamps
+    kts = sorted(m.get("_kts", 0) for m in mine if m.get("_kts", 0) > 0)
+    if len(kts) >= 2 and (kts[-1] - kts[0]) > 0:
+        span_s = (kts[-1] - kts[0]) / 1000.0
+        listener_qps = len(mine) / span_s
+        print(f"[LISTENER throughput]  {listener_qps:.0f} msg/s  span={span_s:.2f}s  msgs={len(mine)}")
+    else:
+        print("[WARN] Kafka timestamps too close to measure throughput")
+
+    # E2E latency: wallclock approach
+    # We recorded write_start wallclock; Kafka messages carry broker timestamp.
+    # Since they're on the same machine in test, the diff is meaningful.
+    write_wall_start_ms = wall_start * 1000  # monotonic, not wallclock — skip cross-clock diff
+    # Instead, measure "drain time": how long after writes finished until last msg appeared
+    if kts:
+        last_kafka_ms = kts[-1]
+        write_end_wall_ms = time.time() * 1000  # approximate; real end was earlier
+        # More useful: total pipeline time = last kafka ts - first kafka ts (already shown above)
+        # and "completeness lag" = time from write-finish to last-kafka-message
+        print(f"[LISTENER lag]  last Kafka msg was at offset {kts[-1]}  "
+              f"({len(mine)} msgs over {(kts[-1] - kts[0]) / 1000:.1f}s)")
+
+    # Per-batch latency inside listener (from message timestamp field in payload)
+    batch_latencies = []
+    for m in mine:
+        lt = m.get("timestamp", 0)
+        kt = m.get("_kts", 0)
+        if lt > 0 and kt > 0:
+            lt_ms = lt * 1000 if lt < 1e12 else lt
+            d = kt - lt_ms
+            if 0 <= d < 300_000:  # discard nonsense values
+                batch_latencies.append(d)
+
+    if batch_latencies:
+        p50, p90, p99 = percentiles(batch_latencies, 0.5, 0.9, 0.99)
+        print(f"[LISTENER->Kafka latency]  "
+              f"P50={p50:.0f}ms  P90={p90:.0f}ms  P99={p99:.0f}ms  "
+              f"MAX={max(batch_latencies):.0f}ms  samples={len(batch_latencies)}")
+
+    # Delivery ratio
+    ratio = len(mine) / total_written[0] * 100 if total_written[0] else 0
+    print(f"[DELIVERY] {len(mine)}/{total_written[0]} = {ratio:.1f}%")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def main():
+    ap = argparse.ArgumentParser(description="KafkaListener test suite")
+    sub = ap.add_subparsers(dest="scenario")
+
+    c = sub.add_parser("correctness", help="Functional correctness test")
+    c.add_argument("--vertices", type=int, default=2000)
+    c.add_argument("--edges-per-vertex", type=int, default=2)
+
+    s = sub.add_parser("stress", help="Sustained throughput stress test")
+    s.add_argument("--vertices", type=int, default=50000)
+    s.add_argument("--writers", type=int, default=8)
+    s.add_argument("--duration", type=int, default=60, help="soft time-limit in seconds")
+
+    a = sub.add_parser("all", help="Run correctness then stress")
+    a.add_argument("--vertices", type=int, default=2000)
+    a.add_argument("--edges-per-vertex", type=int, default=2)
+    a.add_argument("--stress-vertices", type=int, default=50000)
+    a.add_argument("--writers", type=int, default=8)
+    a.add_argument("--duration", type=int, default=60)
+
+    args = ap.parse_args()
+    if not args.scenario:
+        ap.print_help()
+        return 1
+
+    ok = True
+    if args.scenario in ("correctness", "all"):
+        ok = run_correctness(args) and ok
+
+    if args.scenario == "stress":
+        run_stress(args)
+    elif args.scenario == "all":
+        # build a namespace the stress function expects
+        ns = argparse.Namespace(
+            vertices=args.stress_vertices,
+            writers=args.writers,
+            duration=args.duration,
+        )
+        run_stress(ns)
+
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
