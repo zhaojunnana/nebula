@@ -225,11 +225,13 @@ def verify_no_dup(test_msgs):
 
 def verify_ordering(test_msgs):
     by_topic = defaultdict(list)
+    by_tp = defaultdict(list)
     for m in test_msgs:
         by_topic[m.get("_topic", "")].append(m)
+        by_tp[(m.get("_topic", ""), m.get("_part", 0))].append(m)
 
     logid_violations, seq_violations = 0, 0
-    for topic, msgs in by_topic.items():
+    for (_topic, _part), msgs in by_tp.items():
         msgs.sort(key=lambda x: x.get("_offset", 0))
         prev = -1
         for m in msgs:
@@ -257,20 +259,42 @@ def verify_payload(test_msgs):
     field_err, meta_err, checked = 0, 0, 0
     for m in test_msgs:
         checked += 1
-        for f in ("logId", "timestamp", "seq", "spaceId", "partId"):
+        for f in ("logId", "timestamp", "seq", "spaceId", "partId", "type", "operation", "graphOperation"):
             if f not in m:
                 meta_err += 1
                 break
-        if m.get("type") == "vertex" and m.get("graphOperation") in ("UPSERT_VERTEX",):
-            props = m.get("properties")
-            if not props or "name" not in props or "age" not in props:
-                field_err += 1
-            elif not isinstance(props["age"], (int, float)):
-                field_err += 1
-        elif m.get("type") == "edge" and m.get("graphOperation") in ("UPSERT_EDGE",):
-            props = m.get("properties")
-            if not props or "start_year" not in props:
-                field_err += 1
+
+        op = m.get("graphOperation", "")
+        if op == "UPSERT_VERTEX":
+            for f in ("vertexId", "tagId"):
+                if f not in m:
+                    field_err += 1
+                    break
+            else:
+                props = m.get("properties")
+                if not props or "name" not in props or "age" not in props:
+                    field_err += 1
+                elif not isinstance(props["age"], (int, float)):
+                    field_err += 1
+        elif op == "DELETE_TAG":
+            for f in ("vertexId", "tagId"):
+                if f not in m:
+                    field_err += 1
+                    break
+        elif op == "UPSERT_EDGE":
+            for f in ("srcId", "dstId", "edgeType", "ranking"):
+                if f not in m:
+                    field_err += 1
+                    break
+            else:
+                props = m.get("properties")
+                if not props or "start_year" not in props or "end_year" not in props:
+                    field_err += 1
+        elif op == "DELETE_EDGE":
+            for f in ("srcId", "dstId", "edgeType", "ranking"):
+                if f not in m:
+                    field_err += 1
+                    break
     return field_err, meta_err, checked
 
 
@@ -347,12 +371,11 @@ def run_correctness(args):
             dst = f"t{test_id}_v{(i + j + 1) % num_v}"
             expected_edges.add(f"{src}->{dst}@{j}")
             buf.append(f'"{src}"->"{dst}"@{j}:({2000 + i % 20}, {2010 + i % 20})')
-            if len(buf) >= NGQL_BATCH:
+            # Flush full batch or last edge (same idea as INSERT VERTEX: remainder must run when
+            # num_v*epv is not a multiple of NGQL_BATCH).
+            if len(buf) >= NGQL_BATCH or (i == num_v - 1 and j == epv - 1):
                 _execute(session, f"INSERT EDGE {EDGE_NAME}(start_year, end_year) VALUES " + ",".join(buf))
                 buf.clear()
-    if buf:
-        _execute(session, f"INSERT EDGE {EDGE_NAME}(start_year, end_year) VALUES " + ",".join(buf))
-        buf.clear()
 
     insert_done_ts = time.time()
     print(f"[INSERT] {num_v} V + {num_v * epv} E  in {insert_done_ts - write_start:.2f}s")

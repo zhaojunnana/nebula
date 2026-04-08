@@ -5,9 +5,9 @@
 
 #include "kvstore/listener/kafka/KafkaAdapter.h"
 
-#include <atomic>
-
 #include <librdkafka/rdkafka.h>
+
+#include <atomic>
 
 #include "common/base/Base.h"
 
@@ -16,9 +16,7 @@ namespace kvstore {
 
 namespace {
 
-void onDeliveryReport(rd_kafka_t* /*rk*/,
-                      const rd_kafka_message_t* rkmessage,
-                      void* opaque) {
+void onDeliveryReport(rd_kafka_t* /*rk*/, const rd_kafka_message_t* rkmessage, void* opaque) {
   auto* adapter = static_cast<KafkaAdapter*>(opaque);
   if (rkmessage->err) {
     adapter->deliveryFailureCount_.fetch_add(1, std::memory_order_relaxed);
@@ -54,22 +52,17 @@ Status KafkaAdapter::initProducer() {
   char errstr[512];
   rd_kafka_conf_t* conf = rd_kafka_conf_new();
 
-  if (rd_kafka_conf_set(conf, "bootstrap.servers", config_.brokers.c_str(),
-                        errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
+  if (rd_kafka_conf_set(
+          conf, "bootstrap.servers", config_.brokers.c_str(), errstr, sizeof(errstr)) !=
+      RD_KAFKA_CONF_OK) {
     rd_kafka_conf_destroy(conf);
     return Status::Error(folly::stringPrintf("Invalid bootstrap.servers: %s", errstr));
   }
-
-  // Idempotent producer: dedup within a single producer session (no cross-session
-  // guarantee, but all downstream ops are idempotent so duplicates are harmless)
-  rd_kafka_conf_set(conf, "enable.idempotence", "true", nullptr, 0);
-
   if (config_.lingerMs > 0) {
     rd_kafka_conf_set(conf, "linger.ms", std::to_string(config_.lingerMs).c_str(), nullptr, 0);
   }
   if (config_.batchSize > 0) {
-    rd_kafka_conf_set(conf, "batch.size",
-                      std::to_string(config_.batchSize).c_str(), nullptr, 0);
+    rd_kafka_conf_set(conf, "batch.size", std::to_string(config_.batchSize).c_str(), nullptr, 0);
   }
 
   // lz4 compression: reduces network I/O with minimal CPU cost
@@ -100,9 +93,8 @@ Status KafkaAdapter::initProducer() {
   if (!rk) {
     return Status::Error(folly::stringPrintf("Failed to create Kafka producer: %s", errstr));
   }
-  producer_ = rk;
 
-  LOG(INFO) << "Kafka idempotent producer initialized for topic=" << config_.topic;
+  producer_ = rk;
   return Status::OK();
 }
 
@@ -144,9 +136,8 @@ Status KafkaAdapter::sendBatch(const std::vector<KafkaMessage>& messages) {
   auto failCount = deliveryFailureCount_.load(std::memory_order_relaxed);
   if (failCount > 0) {
     auto successCount = deliverySuccessCount_.load(std::memory_order_relaxed);
-    return Status::Error(
-        folly::stringPrintf("Kafka delivery failed for %ld of %ld messages",
-                            failCount, failCount + successCount));
+    return Status::Error(folly::stringPrintf(
+        "Kafka delivery failed for %ld of %ld messages", failCount, failCount + successCount));
   }
 
   return Status::OK();

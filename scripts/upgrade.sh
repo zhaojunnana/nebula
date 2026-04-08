@@ -31,26 +31,13 @@ if [ -n "$REMAINING" ]; then
 fi
 echo "所有 nebula 进程已关闭"
 
-# Step 2: 用 build/bin 覆盖 bin
-echo ""
-echo "=== Step 2: 用 build/bin/ 覆盖 bin/ ==="
-for f in nebula-metad nebula-graphd nebula-storaged; do
-    if [ -f "build/bin/$f" ]; then
-        cp -f "build/bin/$f" "bin/$f"
-        echo "  已更新: bin/$f"
-    else
-        echo "  跳过(不存在): build/bin/$f"
-    fi
-done
-echo "可执行文件更新完成"
-
-# Step 3: 按原命令重启，统一使用 bin/ 下的可执行文件
+# Step 2: 按原命令重启，统一使用 bin/ 下的可执行文件
 echo ""
 echo "=== Step 3: 重启所有 nebula 进程 ==="
 for cmd in "${CMD_ARRAY[@]}"; do
     [ -z "$cmd" ] && continue
     # 将 ./build/bin/ 或 build/bin/ 替换为 bin/
-    cmd=$(echo "$cmd" | sed 's|\./build/bin/|bin/|g; s|build/bin/|bin/|g')
+    cmd=$(echo "$cmd" | sed 's|\./bin/|build/bin/|g; s|bin/|build/bin/|g')
     echo "  启动: $cmd"
     $cmd &
 done

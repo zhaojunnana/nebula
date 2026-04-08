@@ -18,12 +18,14 @@ DEFINE_int32(kafka_listener_batch_size,
 DEFINE_int32(kafka_listener_fsync_interval,
              10,
              "Fsync persist file every N batches. Crash may replay up to N batches "
-             "(duplicates only, no data loss, since downstream ops are idempotent)");
+             "(duplicates appended to topic tail, no data loss)");
 DEFINE_string(kafka_topic_prefix, "nebula", "Kafka topic name prefix");
 DEFINE_string(kafka_brokers, "", "Kafka broker addresses, e.g. 127.0.0.1:9092,127.0.0.1:9093");
 DEFINE_string(kafka_username, "", "Kafka SASL username");
 DEFINE_string(kafka_password, "", "Kafka SASL password");
-DEFINE_string(kafka_security_protocol, "PLAINTEXT", "Kafka security protocol, e.g. PLAINTEXT, SASL_PLAINTEXT, SASL_SSL");
+DEFINE_string(kafka_security_protocol,
+              "PLAINTEXT",
+              "Kafka security protocol, e.g. PLAINTEXT, SASL_PLAINTEXT, SASL_SSL");
 
 namespace nebula {
 namespace kvstore {
@@ -282,8 +284,8 @@ bool KafkaListener::writeAppliedId(LogID lastId, TermID lastTerm, LogID lastAppl
     return false;
   }
   // Fsync every N batches instead of every batch. On OS crash, we may replay
-  // up to N batches worth of messages — acceptable because all downstream
-  // operations (UPSERT/DELETE) are idempotent.
+  // up to N batches worth of messages — acceptable because each partition has
+  // a single writer and duplicates are simply appended to the Kafka topic tail.
   if (++persistCountSinceSync_ >= FLAGS_kafka_listener_fsync_interval) {
     persistCountSinceSync_ = 0;
     if (fsync(fd) != 0) {
@@ -296,7 +298,9 @@ bool KafkaListener::writeAppliedId(LogID lastId, TermID lastTerm, LogID lastAppl
   return true;
 }
 
-std::string KafkaListener::encodeAppliedId(LogID lastId, TermID lastTerm, LogID lastApplyLogId) const {
+std::string KafkaListener::encodeAppliedId(LogID lastId,
+                                           TermID lastTerm,
+                                           LogID lastApplyLogId) const {
   std::string val;
   val.reserve(sizeof(LogID) * 2 + sizeof(TermID));
   val.append(reinterpret_cast<const char*>(&lastId), sizeof(LogID))
@@ -395,8 +399,8 @@ void KafkaListener::processLogs() {
           break;
         }
         default: {
-          LOG(WARNING) << idStr_ << "Unknown operation: "
-                       << static_cast<int32_t>(log[sizeof(int64_t)]);
+          LOG(WARNING) << idStr_
+                       << "Unknown operation: " << static_cast<int32_t>(log[sizeof(int64_t)]);
         }
       }
 
