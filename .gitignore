@@ -75,8 +75,10 @@ venv/
 .specstory
 docs/
 *.pdf
-data/
+data*
 logs/
 .gdb_history
 .gdbinit
 logs*/
+flink*
+etc/

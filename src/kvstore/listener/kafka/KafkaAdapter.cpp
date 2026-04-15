@@ -10,6 +10,7 @@
 #include <atomic>
 
 #include "common/base/Base.h"
+#include "common/thrift/ThriftTypes.h"
 
 namespace nebula {
 namespace kvstore {
@@ -28,7 +29,8 @@ void onDeliveryReport(rd_kafka_t* /*rk*/, const rd_kafka_message_t* rkmessage, v
 
 }  // anonymous namespace
 
-KafkaAdapter::KafkaAdapter(KafkaClientConfig config) : config_(std::move(config)) {
+KafkaAdapter::KafkaAdapter(KafkaClientConfig config, const std::string& topic, PartitionID partId)
+    : config_(std::move(config)), topic_(topic), partid_(partId) {
   if (config_.brokers.empty()) {
     LOG(WARNING) << "KafkaAdapter initialized with empty brokers";
   } else {
@@ -41,9 +43,8 @@ KafkaAdapter::KafkaAdapter(KafkaClientConfig config) : config_(std::move(config)
 
 KafkaAdapter::~KafkaAdapter() {
   if (producer_) {
-    rd_kafka_t* rk = static_cast<rd_kafka_t*>(producer_);
-    rd_kafka_flush(rk, 10 * 1000);
-    rd_kafka_destroy(rk);
+    rd_kafka_flush(producer_, 10 * 1000);
+    rd_kafka_destroy(producer_);
     producer_ = nullptr;
   }
 }
@@ -64,6 +65,9 @@ Status KafkaAdapter::initProducer() {
   if (config_.batchSize > 0) {
     rd_kafka_conf_set(conf, "batch.size", std::to_string(config_.batchSize).c_str(), nullptr, 0);
   }
+
+  // All ISR replicas must acknowledge before produce is considered successful
+  rd_kafka_conf_set(conf, "acks", "all", nullptr, 0);
 
   // lz4 compression: reduces network I/O with minimal CPU cost
   rd_kafka_conf_set(conf, "compression.type", "lz4", nullptr, 0);
@@ -89,12 +93,11 @@ Status KafkaAdapter::initProducer() {
   rd_kafka_conf_set_dr_msg_cb(conf, onDeliveryReport);
   rd_kafka_conf_set_opaque(conf, this);
 
-  rd_kafka_t* rk = rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
-  if (!rk) {
+  producer_ = rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
+  if (!producer_) {
     return Status::Error(folly::stringPrintf("Failed to create Kafka producer: %s", errstr));
   }
 
-  producer_ = rk;
   return Status::OK();
 }
 
@@ -111,8 +114,6 @@ Status KafkaAdapter::sendBatch(const std::vector<KafkaMessage>& messages) {
     return Status::Error("Kafka producer not initialized");
   }
 
-  rd_kafka_t* rk = static_cast<rd_kafka_t*>(producer_);
-
   // Reset delivery counters
   deliverySuccessCount_.store(0, std::memory_order_relaxed);
   deliveryFailureCount_.store(0, std::memory_order_relaxed);
@@ -127,7 +128,7 @@ Status KafkaAdapter::sendBatch(const std::vector<KafkaMessage>& messages) {
   }
 
   // Flush: wait for all in-flight messages to be delivered (or fail)
-  rd_kafka_resp_err_t flushErr = rd_kafka_flush(rk, 30 * 1000);
+  rd_kafka_resp_err_t flushErr = rd_kafka_flush(producer_, 30 * 1000);
   if (flushErr) {
     return Status::Error("Kafka flush timed out");
   }
@@ -144,9 +145,6 @@ Status KafkaAdapter::sendBatch(const std::vector<KafkaMessage>& messages) {
 }
 
 Status KafkaAdapter::produce(const KafkaMessage& message) {
-  rd_kafka_t* rk = static_cast<rd_kafka_t*>(producer_);
-  int32_t partition = message.partition >= 0 ? message.partition : RD_KAFKA_PARTITION_UA;
-
   static constexpr int kMaxRetries = 5;
   static constexpr int kInitialBackoffMs = 100;
 
@@ -154,17 +152,17 @@ Status KafkaAdapter::produce(const KafkaMessage& message) {
     rd_kafka_resp_err_t produceErr;
     if (message.key.empty()) {
       produceErr = rd_kafka_producev(
-          rk,
-          RD_KAFKA_V_TOPIC(config_.topic.c_str()),
-          RD_KAFKA_V_PARTITION(partition),
+          producer_,
+          RD_KAFKA_V_TOPIC(topic_.c_str()),
+          RD_KAFKA_V_PARTITION(partid_ - 1),
           RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
           RD_KAFKA_V_VALUE(const_cast<char*>(message.value.data()), message.value.size()),
           RD_KAFKA_V_END);
     } else {
       produceErr = rd_kafka_producev(
-          rk,
-          RD_KAFKA_V_TOPIC(config_.topic.c_str()),
-          RD_KAFKA_V_PARTITION(partition),
+          producer_,
+          RD_KAFKA_V_TOPIC(topic_.c_str()),
+          RD_KAFKA_V_PARTITION(partid_ - 1),
           RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
           RD_KAFKA_V_KEY(const_cast<char*>(message.key.data()), message.key.size()),
           RD_KAFKA_V_VALUE(const_cast<char*>(message.value.data()), message.value.size()),
@@ -178,7 +176,7 @@ Status KafkaAdapter::produce(const KafkaMessage& message) {
     if (produceErr == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
       if (attempt < kMaxRetries) {
         int backoffMs = kInitialBackoffMs * (1 << attempt);
-        rd_kafka_poll(rk, backoffMs);
+        rd_kafka_poll(producer_, backoffMs);
         continue;
       }
       return Status::Error("Kafka produce queue full after max retries");

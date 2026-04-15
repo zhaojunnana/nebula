@@ -15,10 +15,6 @@
 DEFINE_int32(kafka_listener_batch_size,
              10000,
              "Max number of entries per batch when kafka listener commits");
-DEFINE_int32(kafka_listener_fsync_interval,
-             10,
-             "Fsync persist file every N batches. Crash may replay up to N batches "
-             "(duplicates appended to topic tail, no data loss)");
 DEFINE_string(kafka_topic_prefix, "nebula", "Kafka topic name prefix");
 DEFINE_string(kafka_brokers, "", "Kafka broker addresses, e.g. 127.0.0.1:9092,127.0.0.1:9093");
 DEFINE_string(kafka_username, "", "Kafka SASL username");
@@ -26,6 +22,11 @@ DEFINE_string(kafka_password, "", "Kafka SASL password");
 DEFINE_string(kafka_security_protocol,
               "PLAINTEXT",
               "Kafka security protocol, e.g. PLAINTEXT, SASL_PLAINTEXT, SASL_SSL");
+DEFINE_string(kafka_sasl_mechanism,
+              "",
+              "Kafka SASL mechanism, e.g. PLAIN, SCRAM-SHA-256, SCRAM-SHA-512");
+DEFINE_int32(kafka_batch_size, 1048576, "Kafka producer batch size in bytes (default 1MB)");
+DEFINE_int32(kafka_linger_ms, 50, "Kafka producer linger time in ms for batching");
 
 namespace nebula {
 namespace kvstore {
@@ -79,9 +80,7 @@ void KafkaListener::init() {
   if (!sRet.ok()) {
     LOG(FATAL) << "space name error";
   }
-  // Format topic name: prefix_spaceId_partId
-  topicName_ = std::make_unique<std::string>(
-      folly::stringPrintf("%s_%d_%d", FLAGS_kafka_topic_prefix.c_str(), spaceId_, partId_));
+  topicName_ = folly::stringPrintf("%s_%s", FLAGS_kafka_topic_prefix.c_str(), sRet.value().c_str());
 }
 
 bool KafkaListener::apply(BatchHolder& batch, LogID logId, int64_t timestamp) {
@@ -151,7 +150,7 @@ bool KafkaListener::apply(BatchHolder& batch, LogID logId, int64_t timestamp) {
         }
       } else if (type == BatchLogType::OP_BATCH_REMOVE) {
         payload["operation"] = "REMOVE";
-        payload["graphOperation"] = "DELETE_TAG";
+        payload["graphOperation"] = "DELETE_VERTEX";
       }
     } else {
       auto edgeType = NebulaKeyUtils::getEdgeType(vIdLen_, key);
@@ -283,16 +282,10 @@ bool KafkaListener::writeAppliedId(LogID lastId, TermID lastTerm, LogID lastAppl
     close(fd);
     return false;
   }
-  // Fsync every N batches instead of every batch. On OS crash, we may replay
-  // up to N batches worth of messages — acceptable because each partition has
-  // a single writer and duplicates are simply appended to the Kafka topic tail.
-  if (++persistCountSinceSync_ >= FLAGS_kafka_listener_fsync_interval) {
-    persistCountSinceSync_ = 0;
-    if (fsync(fd) != 0) {
-      LOG(ERROR) << idStr_ << "fsync failed: " << strerror(errno);
-      close(fd);
-      return false;
-    }
+  if (fsync(fd) != 0) {
+    LOG(ERROR) << idStr_ << "fsync failed: " << strerror(errno);
+    close(fd);
+    return false;
   }
   close(fd);
   return true;
@@ -478,15 +471,17 @@ StatusOr<KafkaAdapter*> KafkaListener::getKafkaAdapter() {
 
   KafkaClientConfig config;
   config.brokers = FLAGS_kafka_brokers;
-  config.topic = *topicName_;
   if (!FLAGS_kafka_username.empty()) {
     config.username = FLAGS_kafka_username;
   }
   if (!FLAGS_kafka_password.empty()) {
     config.password = FLAGS_kafka_password;
   }
+  config.saslMechanism = FLAGS_kafka_sasl_mechanism;
   config.securityProtocol = FLAGS_kafka_security_protocol;
-  kafkaAdapter_ = std::make_unique<KafkaAdapter>(std::move(config));
+  config.batchSize = FLAGS_kafka_batch_size;
+  config.lingerMs = FLAGS_kafka_linger_ms;
+  kafkaAdapter_ = std::make_unique<KafkaAdapter>(std::move(config), topicName_, partId_);
   return kafkaAdapter_.get();
 }
 

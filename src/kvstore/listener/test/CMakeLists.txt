@@ -64,3 +64,21 @@ nebula_add_test(
         gtest
         curl
 )
+
+nebula_add_test(
+    NAME
+        kafka_listener_test
+    SOURCES
+        KafkaListenerTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/mock/AdHocSchemaManager.cpp
+        ${CMAKE_SOURCE_DIR}/src/mock/AdHocIndexManager.cpp
+    OBJECTS
+        ${LISTENER_TEST_LIBS}
+    LIBRARIES
+        ${THRIFT_LIBRARIES}
+        ${ROCKSDB_LIBRARIES}
+        ${PROXYGEN_LIBRARIES}
+        wangle
+        gtest
+        curl
+)

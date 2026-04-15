@@ -241,7 +241,7 @@ class MemPartManager final : public PartManager {
   FRIEND_TEST(NebulaStoreTest, RemoveInvalidSpaceTest);
   FRIEND_TEST(NebulaStoreTest, BackupRestoreTest);
   friend class ListenerBasicTest;
-  friend class KafkaListenerIntegrationTest;
+  friend class KafkaListenerTest;
 
  public:
   MemPartManager() = default;

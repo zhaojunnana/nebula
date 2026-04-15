@@ -10,6 +10,8 @@
 #include "common/base/Status.h"
 #include "common/network/NetworkUtils.h"
 
+typedef struct rd_kafka_s rd_kafka_t;
+
 namespace nebula {
 namespace kvstore {
 
@@ -18,13 +20,12 @@ namespace kvstore {
  */
 struct KafkaClientConfig {
   std::string brokers;
-  std::string topic;
   std::string securityProtocol{"PLAINTEXT"};
   std::string saslMechanism;
   std::string username;
   std::string password;
-  int32_t batchSize{1048576};  // 1MB, matches librdkafka default for high throughput
-  int32_t lingerMs{50};       // Allow batching for 50ms to accumulate more messages
+  int32_t batchSize{1048576};
+  int32_t lingerMs{50};
 };
 
 /**
@@ -33,7 +34,6 @@ struct KafkaClientConfig {
 struct KafkaMessage {
   std::string key;
   std::string value;
-  int32_t partition{-1};  // -1 means auto partition
 };
 
 /**
@@ -43,7 +43,9 @@ struct KafkaMessage {
  */
 class KafkaAdapter {
  public:
-  explicit KafkaAdapter(KafkaClientConfig config);
+  KafkaAdapter(KafkaClientConfig config, const std::string& topic, PartitionID partId);
+  KafkaAdapter(const KafkaAdapter&) = delete;
+  KafkaAdapter& operator=(const KafkaAdapter&) = delete;
 
   virtual Status send(const KafkaMessage& message);
 
@@ -68,7 +70,9 @@ class KafkaAdapter {
   Status produce(const KafkaMessage& message);
 
   KafkaClientConfig config_;
-  void* producer_{nullptr};  // rd_kafka_t*
+  std::string topic_;
+  rd_kafka_t* producer_{nullptr};
+  const PartitionID partid_;
 };
 
 }  // namespace kvstore

@@ -38,8 +38,8 @@ class KafkaListener : public Listener {
       : Listener(spaceId, partId, std::move(localAddr), walPath, ioPool, workers, handlers),
         schemaMan_(schemaMan) {
     CHECK(!!schemaMan);
-    lastApplyLogFile_ = std::make_unique<std::string>(
-        folly::stringPrintf("%s/last_apply_log_%d", walPath.c_str(), partId));
+    lastApplyLogFile_ =
+        std::string(folly::stringPrintf("%s/last_apply_log_%d", walPath.c_str(), partId));
   }
 
  protected:
@@ -123,11 +123,10 @@ class KafkaListener : public Listener {
 
  private:
   meta::SchemaManager* schemaMan_{nullptr};
-  std::unique_ptr<std::string> lastApplyLogFile_{nullptr};
-  std::unique_ptr<std::string> topicName_{nullptr};
+  std::string lastApplyLogFile_;
+  std::string topicName_;
   int32_t vIdLen_{0};
   bool isIntVid_{false};
-  int32_t persistCountSinceSync_{0};
 };
 
 }  // namespace kvstore

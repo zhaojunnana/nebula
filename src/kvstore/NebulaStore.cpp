@@ -663,7 +663,7 @@ std::shared_ptr<Listener> NebulaStore::newListener(GraphSpaceID spaceId,
   if (type == meta::cpp2::ListenerType::ELASTICSEARCH) {
     listener = std::make_shared<ESListener>(
         spaceId, partId, raftAddr_, walPath, ioPool_, bgWorkers_, workers_, options_.schemaMan_);
-  } else if (type == meta::cpp2::ListenerType::NEBULA) {
+  } else if (type == meta::cpp2::ListenerType::KAFKA) {
     listener = std::make_shared<KafkaListener>(
         spaceId, partId, raftAddr_, walPath, ioPool_, bgWorkers_, workers_, options_.schemaMan_);
   } else {
