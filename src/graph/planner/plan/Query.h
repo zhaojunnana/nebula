@@ -394,6 +394,14 @@ class ExpandAll : public Expand {
 
   PlanNode* clone() const override;
 
+  void setFlat(bool flat) {
+    flat_ = flat;
+  }
+
+  bool flat() const {
+    return flat_;
+  }
+
  protected:
   friend ObjectPool;
   ExpandAll(QueryContext* qctx,
@@ -433,6 +441,7 @@ class ExpandAll : public Expand {
   std::unique_ptr<std::vector<VertexProp>> vertexProps_{nullptr};
   YieldColumns* vertexColumns_{nullptr};
   YieldColumns* edgeColumns_{nullptr};
+  bool flat_{false};
 };
 
 // Get property with given vertex keys.

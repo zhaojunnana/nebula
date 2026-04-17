@@ -10,6 +10,7 @@
 #include "folly/AtomicLinkedList.h"
 #include "folly/container/F14Map.h"
 #include "interface/gen-cpp2/common_types.h"
+#include "interface/gen-cpp2/storage_types.h"
 #include "storage/CommonUtils.h"
 namespace nebula {
 namespace storage {
@@ -252,6 +253,8 @@ class IndexNode {
    * @return const time::Duration&
    */
   inline const time::Duration& duration();
+
+  virtual std::tuple<Value, cpp2::ScanCursor> getIterKey();
 
  protected:
   virtual Result doNext() = 0;

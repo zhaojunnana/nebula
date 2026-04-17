@@ -8,6 +8,7 @@ nebula_add_library(
     elasticsearch/ESListener.cpp
     kafka/KafkaListener.cpp
     kafka/KafkaAdapter.cpp
+    nebula/NebulaListener.cpp
 )
 
 nebula_add_subdirectory(test)

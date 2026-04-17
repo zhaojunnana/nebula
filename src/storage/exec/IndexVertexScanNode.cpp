@@ -116,7 +116,10 @@ Map<std::string, Value> IndexVertexScanNode::decodeFromBase(const std::string& k
 }
 
 std::unique_ptr<IndexNode> IndexVertexScanNode::copy() {
-  return std::make_unique<IndexVertexScanNode>(*this);
+  std::unordered_map<Value, cpp2::ScanCursor> cursorsCopy(this->cursors_);
+  auto copyNode = std::make_unique<IndexVertexScanNode>(*this);
+  copyNode->setCursors(this->ctxIdx_, std::move(cursorsCopy));
+  return copyNode;
 }
 
 }  // namespace storage

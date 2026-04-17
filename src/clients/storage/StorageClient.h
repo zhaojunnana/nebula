@@ -79,7 +79,8 @@ class StorageClient
       const std::vector<cpp2::OrderBy>& orderBy = std::vector<cpp2::OrderBy>(),
       int64_t limit = std::numeric_limits<int64_t>::max(),
       const Expression* filter = nullptr,
-      const Expression* tagFilter = nullptr);
+      const Expression* tagFilter = nullptr,
+      std::unordered_map<Value, cpp2::ScanCursor> cursors = {});
 
   StorageRpcRespFuture<cpp2::GetDstBySrcResponse> getDstBySrc(
       const CommonRequestParam& param,
@@ -147,7 +148,9 @@ class StorageClient
       int32_t tagOrEdge,
       const std::vector<std::string>& returnCols,
       std::vector<storage::cpp2::OrderBy> orderBy,
-      int64_t limit);
+      int64_t limit,
+      std::unordered_map<HostAddr, std::unordered_map<Value, cpp2::ScanCursor>> clusterCursors =
+          {});
 
   StorageRpcRespFuture<cpp2::GetNeighborsResponse> lookupAndTraverse(
       const CommonRequestParam& param, cpp2::IndexSpec indexSpec, cpp2::TraverseSpec traverseSpec);

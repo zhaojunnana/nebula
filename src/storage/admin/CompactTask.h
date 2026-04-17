@@ -31,6 +31,15 @@ class CompactTask : public AdminTask {
   ErrorOr<nebula::cpp2::ErrorCode, std::vector<AdminSubTask>> genSubTasks() override;
 
   nebula::cpp2::ErrorCode subTask(nebula::kvstore::KVEngine* engine);
+
+  nebula::cpp2::ErrorCode subRangTask(nebula::kvstore::KVEngine* engine, int ts);
+
+  void cancel() override {
+    canceled_ = true;
+  }
+
+ private:
+  std::atomic<bool> canceled_{false};
 };
 
 }  // namespace storage

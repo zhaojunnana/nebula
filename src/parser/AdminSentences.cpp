@@ -217,6 +217,9 @@ std::string AddListenerSentence::toString() const {
     case meta::cpp2::ListenerType::KAFKA:
       buf += "KAFKA ";
       break;
+    case meta::cpp2::ListenerType::NEBULA:
+      buf += "NEBULA ";
+      break;
     case meta::cpp2::ListenerType::UNKNOWN:
       DLOG(FATAL) << "Unknown listener type.";
       return "";
@@ -235,6 +238,9 @@ std::string RemoveListenerSentence::toString() const {
       break;
     case meta::cpp2::ListenerType::KAFKA:
       buf += "KAFKA ";
+      break;
+    case meta::cpp2::ListenerType::NEBULA:
+      buf += "NEBULA ";
       break;
     case meta::cpp2::ListenerType::UNKNOWN:
       DLOG(FATAL) << "Unknown listener type.";

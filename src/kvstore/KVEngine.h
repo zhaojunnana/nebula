@@ -311,6 +311,13 @@ class KVEngine {
   virtual nebula::cpp2::ErrorCode compact() = 0;
 
   /**
+   * @brief Do data compation files in lsm tree
+   *
+   * @return nebula::cpp2::ErrorCode
+   */
+  virtual nebula::cpp2::ErrorCode rangCompact(int ts, std::atomic<bool>& canceled) = 0;
+
+  /**
    * @brief Flush data in memtable into sst
    *
    * @return nebula::cpp2::ErrorCode

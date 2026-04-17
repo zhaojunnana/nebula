@@ -16,6 +16,7 @@
 #include "kvstore/stats/KVStats.h"
 
 DEFINE_int32(cluster_id, 0, "A unique id for each cluster");
+DEFINE_bool(enable_binlog, false, "enable binlog");
 
 namespace nebula {
 namespace kvstore {
@@ -343,6 +344,10 @@ std::tuple<nebula::cpp2::ErrorCode, LogID, TermID> Part::commitLogs(
       }
     }
 
+    if (FLAGS_enable_binlog && role_ == Role::LEADER) {
+      commitBinLog(lastId, lastTerm, log);
+    }
+
     ++(*iter);
   }
 
@@ -360,6 +365,181 @@ std::tuple<nebula::cpp2::ErrorCode, LogID, TermID> Part::commitLogs(
     return {code, lastId, lastTerm};
   } else {
     return {code, kNoCommitLogId, kNoCommitLogTerm};
+  }
+}
+
+void Part::commitBinLog(LogID logID, TermID termID, folly::StringPiece log) {
+  switch (log[sizeof(int64_t)]) {
+    case OP_PUT: {
+      auto pieces = decodeMultiValues(log);
+      DCHECK_EQ(2, pieces.size());
+      writeBinLog(OP_PUT, pieces[0], pieces[1], logID, termID);
+      break;
+    }
+    case OP_MULTI_PUT: {
+      auto kvs = decodeMultiValues(log);
+      DCHECK_EQ((kvs.size() + 1) / 2, kvs.size() / 2);
+      for (size_t i = 0; i < kvs.size(); i += 2) {
+        writeBinLog(OP_PUT, kvs[i], kvs[i + 1], logID, termID);
+      }
+      break;
+    }
+    case OP_REMOVE: {
+      auto key = decodeSingleValue(log);
+      writeBinLog(OP_REMOVE, key, key, logID, termID);
+      break;
+    }
+    case OP_MULTI_REMOVE: {
+      auto keys = decodeMultiValues(log);
+      for (auto k : keys) {
+        writeBinLog(OP_REMOVE, k, k, logID, termID);
+      }
+      break;
+    }
+    case OP_REMOVE_RANGE: {
+      break;
+    }
+    case OP_BATCH_WRITE: {
+      auto data = decodeBatchValue(log);
+      for (auto& op : data) {
+        if (op.first == BatchLogType::OP_BATCH_PUT) {
+          writeBinLog(OP_PUT, op.second.first, op.second.second, logID, termID);
+        } else if (op.first == BatchLogType::OP_BATCH_REMOVE) {
+          writeBinLog(OP_REMOVE, op.second.first, op.second.second, logID, termID);
+        } else if (op.first == BatchLogType::OP_BATCH_REMOVE_RANGE) {
+        }
+      }
+      break;
+    }
+    default: {
+    }
+  }
+}
+
+void Part::writeBinLog(
+    LogType logType, folly::StringPiece key, folly::StringPiece value, LogID logID, TermID termID) {
+  if (NebulaKeyUtils::isTag(vIdLen_, key)) {
+    writeVertexBinLog(logType, key, value, logID, termID);
+  } else if (NebulaKeyUtils::isEdge(vIdLen_, key)) {
+    writeEdgeBinLog(logType, key, value, logID, termID);
+  }
+}
+
+void Part::writeVertexBinLog(
+    LogType logType, folly::StringPiece key, folly::StringPiece value, LogID logID, TermID termID) {
+  auto tagId = NebulaKeyUtils::getTagId(vIdLen_, key);
+  auto desKey = NebulaKeyUtils::getVertexId(vIdLen_, key);
+  switch (logType) {
+    case OP_PUT: {
+      std::string oldVal;
+      auto res = engine_->get(key.str(), &oldVal);
+      if (res == nebula::cpp2::ErrorCode::SUCCEEDED) {
+        if (oldVal.size() > 0) {
+          auto oldProps = oldVal.substr(0, oldVal.length() - sizeof(int64_t));
+          auto newProps = value.str().substr(0, value.str().length() - sizeof(int64_t));
+          if (oldProps != newProps) {
+            // update
+            printVidLog(desKey, "UPDATE", logID, termID, tagId);
+          }
+        }
+      } else if (res == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+        // insert
+        printVidLog(desKey, "INSERT", logID, termID, tagId);
+      }
+      break;
+    }
+    case OP_REMOVE: {
+      std::string oldVal;
+      auto res = engine_->get(key.str(), &oldVal);
+      if (res == nebula::cpp2::ErrorCode::SUCCEEDED) {
+        if (oldVal.size() > 0) {
+          // remove
+          printVidLog(desKey, "REMOVE", logID, termID, tagId);
+        }
+      }
+      break;
+    }
+    default: {
+    }
+  }
+}
+
+void Part::printVidLog(
+    folly::StringPiece vid, std::string operate, LogID logID, TermID termID, TagID tagId) {
+  if (vidType_ == nebula::cpp2::PropertyType::INT64) {
+    auto intKey = *reinterpret_cast<const int64_t*>(vid.data());
+    VLOG(0) << "_BINLOG:{\"spaceId\":" << spaceId_ << ", \"tagId\":" << tagId
+            << ", \"type\":\"VERTEX\", \"logID\":" << logID << ", \"termID\":" << termID
+            << ", \"vid\": \"" << intKey << "\", \"spaceType\":\"INT\", \"operate\":\"" << operate
+            << "\"}";
+  } else {
+    VLOG(0) << "_BINLOG:{\"spaceId\":" << spaceId_ << ", \"tagId\":" << tagId
+            << ", \"type\":\"VERTEX\", \"logID\":" << logID << ", \"termID\":" << termID
+            << ", \"vid\": \"" << vid.data() << "\", \"spaceType\":\"STRING\", \"operate\":\""
+            << operate << "\"}";
+  }
+}
+
+void Part::printEdgeLog(folly::StringPiece src,
+                        EdgeRanking rank,
+                        folly::StringPiece dst,
+                        std::string operate,
+                        LogID logID,
+                        TermID termID,
+                        EdgeType edgeType) {
+  if (vidType_ == nebula::cpp2::PropertyType::INT64) {
+    auto source = *reinterpret_cast<const int64_t*>(src.data());
+    auto target = *reinterpret_cast<const int64_t*>(dst.data());
+    VLOG(0) << "_BINLOG:{\"spaceId\":" << spaceId_ << ", \"edgeType\":" << edgeType
+            << ", \"type\":\"EDGE\", \"logID\":" << logID << ", \"termID\":" << termID
+            << ", \"source\": \"" << source << "\", \"rank\":" << rank << ", \"target\": \""
+            << target << "\", \"spaceType\":\"INT\", \"operate\":\"" << operate << "\"}";
+  } else {
+    VLOG(0) << "_BINLOG:{\"spaceId\":" << spaceId_ << ", \"edgeType\":" << edgeType
+            << ", \"type\":\"EDGE\", \"logID\":" << logID << ", \"termID\":" << termID
+            << ", \"source\": \"" << src.data() << "\", \"rank\":" << rank << ", \"target\": \""
+            << dst.data() << "\", \"spaceType\":\"STRING\", \"operate\":\"" << operate << "\"}";
+  }
+}
+
+void Part::writeEdgeBinLog(
+    LogType logType, folly::StringPiece key, folly::StringPiece value, LogID logID, TermID termID) {
+  auto srcId = NebulaKeyUtils::getSrcId(vIdLen_, key);
+  auto dstId = NebulaKeyUtils::getDstId(vIdLen_, key);
+  auto edgeType = NebulaKeyUtils::getEdgeType(vIdLen_, key);
+  auto rank = NebulaKeyUtils::getRank(vIdLen_, key);
+  switch (logType) {
+    case OP_PUT: {
+      std::string oldVal;
+      auto res = engine_->get(key.str(), &oldVal);
+      if (res == nebula::cpp2::ErrorCode::SUCCEEDED) {
+        if (oldVal.size() > 0) {
+          auto oldProps = oldVal.substr(0, oldVal.length() - sizeof(int64_t));
+          auto newProps = value.str().substr(0, value.str().length() - sizeof(int64_t));
+          if (oldProps != newProps) {
+            // update
+            printEdgeLog(srcId, rank, dstId, "UPDATE", logID, termID, edgeType);
+          }
+        }
+      } else if (res == nebula::cpp2::ErrorCode::E_KEY_NOT_FOUND) {
+        // insert
+        printEdgeLog(srcId, rank, dstId, "INSERT", logID, termID, edgeType);
+      }
+      break;
+    }
+    case OP_REMOVE: {
+      std::string oldVal;
+      auto res = engine_->get(key.str(), &oldVal);
+      if (res == nebula::cpp2::ErrorCode::SUCCEEDED) {
+        if (oldVal.size() > 0) {
+          // remove
+          printEdgeLog(srcId, rank, dstId, "REMOVE", logID, termID, edgeType);
+        }
+      }
+      break;
+    }
+    default: {
+    }
   }
 }
 
@@ -559,6 +739,10 @@ nebula::cpp2::ErrorCode Part::cleanup() {
   }
   return engine_->commitBatchWrite(
       std::move(batch), FLAGS_rocksdb_disable_wal, FLAGS_rocksdb_wal_sync, true);
+}
+
+void Part::setVidType(const nebula::cpp2::PropertyType& vidType) {
+  vidType_ = vidType;
 }
 
 nebula::cpp2::ErrorCode Part::metaCleanup() {

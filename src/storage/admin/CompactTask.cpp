@@ -27,16 +27,28 @@ ErrorOr<nebula::cpp2::ErrorCode, std::vector<AdminSubTask>> CompactTask::genSubT
   }
 
   auto space = nebula::value(errOrSpace);
-
-  for (auto& engine : space->engines_) {
-    auto task = std::bind(&CompactTask::subTask, this, engine.get());
-    ret.emplace_back(task);
+  auto paras = ctx_.parameters_.task_specific_paras_ref();
+  if (paras.has_value() && paras->size() == 1) {
+    int ts = folly::to<int>((*paras)[0]);
+    for (auto& engine : space->engines_) {
+      auto task = std::bind(&CompactTask::subRangTask, this, engine.get(), ts);
+      ret.emplace_back(task);
+    }
+  } else {
+    for (auto& engine : space->engines_) {
+      auto task = std::bind(&CompactTask::subTask, this, engine.get());
+      ret.emplace_back(task);
+    }
   }
   return ret;
 }
 
 nebula::cpp2::ErrorCode CompactTask::subTask(kvstore::KVEngine* engine) {
   return engine->compact();
+}
+
+nebula::cpp2::ErrorCode CompactTask::subRangTask(kvstore::KVEngine* engine, int ts) {
+  return engine->rangCompact(ts, canceled_);
 }
 
 }  // namespace storage

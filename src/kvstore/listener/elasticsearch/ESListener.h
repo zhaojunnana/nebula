@@ -104,7 +104,7 @@ class ESListener : public Listener {
    */
   std::string encodeAppliedId(LogID lastId, TermID lastTerm, LogID lastApplyLogId) const;
 
- private:
+ protected:
   meta::SchemaManager* schemaMan_{nullptr};
   using PickFunc = std::function<void(BatchLogType type,
                                       const std::string& index,
@@ -121,6 +121,8 @@ class ESListener : public Listener {
   std::string normalizeVid(const std::string& vid);
 
   StatusOr<::nebula::plugin::ESAdapter> getESAdapter();
+
+  int getBatchSize();
 
   std::unique_ptr<std::string> lastApplyLogFile_{nullptr};
   std::unique_ptr<std::string> spaceName_{nullptr};

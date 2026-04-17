@@ -232,6 +232,7 @@ SubPlan GoPlanner::doPlan() {
                                     buildVertexProps(goCtx_->exprProps.srcTagProps()),
                                     goCtx_->srcPropsExpr,
                                     goCtx_->edgePropsExpr);
+  expandAll->setFlat(goCtx_->isFlat);
   if (goCtx_->joinInput) {
     expandAll->setJoinInput(true);
     // Insert _expand_vid in the first column in colNames

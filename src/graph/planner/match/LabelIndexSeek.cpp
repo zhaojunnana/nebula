@@ -5,9 +5,15 @@
 
 #include "graph/planner/match/LabelIndexSeek.h"
 
+#include <vector>
+
+#include "common/base/Base.h"
+#include "common/expression/Expression.h"
+#include "common/expression/LogicalExpression.h"
 #include "graph/planner/match/MatchSolver.h"
 #include "graph/planner/plan/Query.h"
 #include "graph/util/ExpressionUtils.h"
+#include "graph/util/OptimizerUtils.h"
 
 namespace nebula {
 namespace graph {
@@ -88,38 +94,65 @@ StatusOr<SubPlan> LabelIndexSeek::transformNode(NodeContext* nodeCtx) {
     auto* filter = ExpressionUtils::rewriteInnerInExpr(nodeCtx->bindWhereClause->filter);
     const auto& nodeAlias = nodeCtx->info->alias;
     const auto& schemaName = nodeCtx->scanInfo.schemaNames.back();
+    auto schemaId = nodeCtx->scanInfo.schemaIds.back();
+    auto spaceId = nodeCtx->spaceId;
+    auto schemaIndexes =
+        OptimizerUtils::allIndexesBySchema(nodeCtx->qctx, spaceId, schemaId, false);
 
-    if (filter->kind() == Expression::Kind::kLogicalOr) {
-      auto exprs = ExpressionUtils::collectAll(filter, {Expression::Kind::kLabelTagProperty});
-      bool matched = exprs.empty() ? false : true;
-      for (auto* expr : exprs) {
-        auto tagPropExpr = static_cast<const LabelTagPropertyExpression*>(expr);
-        if (static_cast<const PropertyExpression*>(tagPropExpr->label())->prop() != nodeAlias ||
-            tagPropExpr->sym() != schemaName) {
-          matched = false;
-          break;
-        }
-      }
-      if (matched) {
-        auto flattenFilter = ExpressionUtils::flattenInnerLogicalExpr(filter);
-        DCHECK_EQ(flattenFilter->kind(), Expression::Kind::kLogicalOr);
-        auto& filterItems = static_cast<LogicalExpression*>(flattenFilter)->operands();
-        auto canBeEmbedded = [](Expression::Kind k) -> bool {
-          return k == Expression::Kind::kRelEQ || k == Expression::Kind::kRelLT ||
-                 k == Expression::Kind::kRelLE || k == Expression::Kind::kRelGT ||
-                 k == Expression::Kind::kRelGE;
-        };
-        bool canBeEmbedded2IndexScan = true;
-        for (auto& f : filterItems) {
-          if (!canBeEmbedded(f->kind())) {
-            canBeEmbedded2IndexScan = false;
+    std::vector<Expression*> filterGroups;
+    if (filter->kind() == Expression::Kind::kLogicalAnd) {
+      filterGroups = static_cast<LogicalExpression*>(filter)->operands();
+    } else {
+      filterGroups.emplace_back(filter);
+    }
+    for (auto partFilter : filterGroups) {
+      if (partFilter->kind() == Expression::Kind::kLogicalOr) {
+        auto exprs = ExpressionUtils::collectAll(partFilter, {Expression::Kind::kLabelTagProperty});
+        bool matched = exprs.empty() ? false : true;
+        for (auto* expr : exprs) {
+          auto tagPropExpr = static_cast<const LabelTagPropertyExpression*>(expr);
+          auto exprAlias = static_cast<const PropertyExpression*>(tagPropExpr->label())->prop();
+          if (exprAlias != nodeAlias ||
+              (tagPropExpr->sym() != "*" && tagPropExpr->sym() != schemaName) ||
+              nodeCtx->qctx->vctx()->getNodePropIndexTag(exprAlias) != schemaName) {
+            matched = false;
+            break;
+          }
+          // check prop in tag index
+          bool hasIndex = false;
+          for (auto& index : schemaIndexes) {
+            if (tagPropExpr->prop() == index->get_fields().front().name) {
+              hasIndex = true;
+              break;
+            }
+          }
+          if (!hasIndex) {
+            matched = false;
             break;
           }
         }
-        if (canBeEmbedded2IndexScan) {
-          storage::cpp2::IndexQueryContext ctx;
-          ctx.filter_ref() = Expression::encode(*flattenFilter);
-          scan->setIndexQueryContext({ctx});
+        if (matched) {
+          auto flattenFilter = ExpressionUtils::flattenInnerLogicalExpr(partFilter);
+          DCHECK_EQ(flattenFilter->kind(), Expression::Kind::kLogicalOr);
+          auto& filterItems = static_cast<LogicalExpression*>(flattenFilter)->operands();
+          auto canBeEmbedded = [](Expression::Kind k) -> bool {
+            return k == Expression::Kind::kRelEQ || k == Expression::Kind::kRelLT ||
+                   k == Expression::Kind::kRelLE || k == Expression::Kind::kRelGT ||
+                   k == Expression::Kind::kRelGE;
+          };
+          bool canBeEmbedded2IndexScan = true;
+          for (auto& f : filterItems) {
+            if (!canBeEmbedded(f->kind())) {
+              canBeEmbedded2IndexScan = false;
+              break;
+            }
+          }
+          if (canBeEmbedded2IndexScan) {
+            storage::cpp2::IndexQueryContext ctx;
+            ctx.filter_ref() = Expression::encode(*flattenFilter);
+            scan->setIndexQueryContext({ctx});
+            break;
+          }
         }
       }
     }

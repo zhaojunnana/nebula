@@ -40,6 +40,7 @@ nebula_add_library(
     rule/PushFilterDownNodeRule.cpp
     rule/PushFilterDownScanVerticesRule.cpp
     rule/PushFilterDownTraverseRule.cpp
+    rule/PushFilterDownTraverseRule2D.cpp
     rule/PushVFilterDownScanVerticesRule.cpp
     rule/OptimizeEdgeIndexScanByFilterRule.cpp
     rule/OptimizeTagIndexScanByFilterRule.cpp

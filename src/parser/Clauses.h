@@ -197,9 +197,10 @@ class OverClause final {
 
 class TruncateClause {
  public:
-  TruncateClause(Expression *expr, bool isSample) {
+  TruncateClause(Expression *expr, bool isSample, bool isFlat = false) {
     truncate_ = expr;
     isSample_ = isSample;
+    isFlat_ = isFlat;
   }
 
   Expression *truncate() const {
@@ -207,11 +208,15 @@ class TruncateClause {
   }
 
   std::unique_ptr<TruncateClause> clone() const {
-    return std::make_unique<TruncateClause>(truncate_->clone(), isSample_);
+    return std::make_unique<TruncateClause>(truncate_->clone(), isSample_, isFlat_);
   }
 
   bool isSample() const {
     return isSample_;
+  }
+
+  bool isFlat() const {
+    return isFlat_;
   }
 
   std::string toString() const;
@@ -219,6 +224,7 @@ class TruncateClause {
  private:
   bool isSample_{false};
   Expression *truncate_{nullptr};
+  bool isFlat_{false};
 };
 
 class WhereClause {

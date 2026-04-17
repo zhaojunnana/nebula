@@ -396,5 +396,9 @@ StatusOr<::nebula::plugin::ESAdapter> ESListener::getESAdapter() {
   return ::nebula::plugin::ESAdapter(std::move(esClients));
 }
 
+int ESListener::getBatchSize() {
+  return FLAGS_listener_commit_batch_size;
+}
+
 }  // namespace kvstore
 }  // namespace nebula

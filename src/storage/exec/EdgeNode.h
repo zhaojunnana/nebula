@@ -226,7 +226,31 @@ class SingleEdgeNode final : public EdgeNode<VertexID> {
             << ", prop size " << props_->size();
     std::unique_ptr<kvstore::KVIterator> iter;
     prefix_ = NebulaKeyUtils::edgePrefix(context_->vIdLen(), partId, vId, edgeType_);
-    ret = context_->env()->kvstore_->prefix(context_->spaceId(), partId, prefix_, &iter);
+
+    auto it = cursors_.find(vId);
+    if (it != cursors_.end()) {
+      auto cursor = it->second.next_cursor_ref().value();
+      auto et = NebulaKeyUtils::getEdgeType(context_->vIdLen(), cursor);
+      if (et == edgeType_) {
+        ret = context_->env()->kvstore_->rangeWithPrefix(
+            context_->spaceId(), partId, cursor, prefix_, &iter, false);
+      } else {
+        bool edgeTypeMax = true;
+        for (const auto& ec : edgeContext_->propContexts_) {
+          if (ec.first == edgeType_) {
+            edgeTypeMax = true;
+          }
+          if (ec.first == et) {
+            edgeTypeMax = false;
+          }
+        }
+        if (edgeTypeMax) {
+          ret = context_->env()->kvstore_->prefix(context_->spaceId(), partId, prefix_, &iter);
+        }
+      }
+    } else {
+      ret = context_->env()->kvstore_->prefix(context_->spaceId(), partId, prefix_, &iter);
+    }
     if (ret == nebula::cpp2::ErrorCode::SUCCEEDED && iter && iter->valid()) {
       if (!skipDecode_) {
         iter_.reset(new SingleEdgeIterator(context_, std::move(iter), edgeType_, schemas_, &ttl_));
@@ -239,9 +263,14 @@ class SingleEdgeNode final : public EdgeNode<VertexID> {
     return ret;
   }
 
+  void setCursors(std::unordered_map<Value, cpp2::ScanCursor>&& cursors) {
+    cursors_ = std::move(cursors);
+  }
+
  private:
   std::unique_ptr<SingleEdgeIterator> iter_;
   std::string prefix_;
+  std::unordered_map<Value, cpp2::ScanCursor> cursors_;
 };
 
 }  // namespace storage

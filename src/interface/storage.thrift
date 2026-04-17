@@ -118,6 +118,15 @@ enum EdgeDirection {
     OUT_EDGE = 3,
 }
 
+/*
+ * End of Index section
+ */
+
+struct ScanCursor {
+    // next start key of scan, only valid when has_next is true
+    1: optional binary                      next_cursor,
+}
+
 
 ///////////////////////////////////////////////////////////
 //
@@ -178,6 +187,9 @@ struct GetNeighborsRequest {
         (cpp.template = "std::unordered_map")   parts,
     4: TraverseSpec                             traverse_spec,
     5: optional RequestCommon                   common,
+    // Id => cursor
+    6: map<common.Value, ScanCursor>
+        (cpp.template = "std::unordered_map")   cursors,
 }
 
 
@@ -235,6 +247,9 @@ struct GetNeighborsResponse {
     //   "_expr:<alias1>:<alias2>:..."
     //
     2: optional common.DataSet vertices,
+        // Id => cursor
+    3: map<common.Value, ScanCursor>
+        (cpp.template = "std::unordered_map")   cursors,
 }
 /*
  * End of GetNeighbors section
@@ -517,6 +532,9 @@ struct LookupIndexResp {
     2: optional common.DataSet          data,
     // stat_data only have one column, the column name is the order in LookupIndexRequest.stat_prop
     3: optional common.DataSet          stat_data,
+    // cursors <index-partId, cursor>
+    4: map<common.Value, ScanCursor>
+        (cpp.template = "std::unordered_map")   cursors,
 }
 
 enum ScanType {
@@ -569,6 +587,9 @@ struct LookupIndexRequest {
     6: optional i64                         limit,
     7: optional list<OrderBy>               order_by,
     8: optional list<StatProp>              stat_columns,
+    // indexId-partId => cursor
+    9: map<common.Value, ScanCursor>
+        (cpp.template = "std::unordered_map")   cursors,
 }
 
 
@@ -581,15 +602,6 @@ struct LookupAndTraverseRequest {
     3: IndexSpec                            indices,
     4: TraverseSpec                         traverse_spec,
     5: optional RequestCommon               common,
-}
-
-/*
- * End of Index section
- */
-
-struct ScanCursor {
-    // next start key of scan, only valid when has_next is true
-    1: optional binary                      next_cursor,
 }
 
 struct ScanVertexRequest {

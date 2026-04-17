@@ -116,7 +116,7 @@ bool MatchSolver::extractTagPropName(const Expression* expr,
                                      std::string* propName) {
   if (expr->kind() != Expression::Kind::kLabelTagProperty) return false;
   auto tagPropExpr = static_cast<const LabelTagPropertyExpression*>(expr);
-  if (tagPropExpr->sym() != label) return false;
+  if (tagPropExpr->sym() != "*" && tagPropExpr->sym() != label) return false;
   auto propExpr = static_cast<const PropertyExpression*>(tagPropExpr->label());
   if (propExpr->prop() != alias) return false;
   *propName = tagPropExpr->prop();

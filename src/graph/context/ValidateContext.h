@@ -90,6 +90,18 @@ class ValidateContext final {
     return indexes_.find(indexName) != indexes_.end();
   }
 
+  std::string getNodePropIndexTag(const std::string& nodeAlias) {
+    static const std::string noFoundTag;
+    if (nodePropIndexTags_.find(nodeAlias) == nodePropIndexTags_.end()) {
+      return noFoundTag;
+    }
+    return nodePropIndexTags_[nodeAlias];
+  }
+
+  void registerNodePropIndexTag(std::string nodeAlias, std::string tag) {
+    nodePropIndexTags_.emplace(std::move(nodeAlias), std::move(tag));
+  }
+
  private:
   // spaces_ is the trace of space switch
   std::vector<SpaceInfo> spaces_;
@@ -102,6 +114,8 @@ class ValidateContext final {
   Schemas schemas_;
   std::unordered_set<std::string> createSpaces_;
   std::unordered_set<std::string> indexes_;
+  // node prop index tags, for 2 phase prop index expression
+  std::unordered_map<std::string, std::string> nodePropIndexTags_;
 };
 }  // namespace graph
 }  // namespace nebula

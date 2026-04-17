@@ -185,13 +185,13 @@ using namespace nebula;
 %token KW_GET KW_DECLARE KW_GRAPH KW_META KW_STORAGE KW_AGENT
 %token KW_TTL KW_TTL_DURATION KW_TTL_COL KW_DATA KW_STOP
 %token KW_FETCH KW_PROP KW_UPDATE KW_UPSERT KW_WHEN
-%token KW_ORDER KW_ASC KW_LIMIT KW_SAMPLE KW_OFFSET KW_ASCENDING KW_DESCENDING
+%token KW_ORDER KW_ASC KW_LIMIT KW_FLAT_LIMIT KW_SAMPLE KW_OFFSET KW_ASCENDING KW_DESCENDING
 %token KW_DISTINCT KW_ALL KW_OF
 %token KW_BALANCE KW_LEADER KW_RESET KW_PLAN
 %token KW_SHORTEST KW_PATH KW_NOLOOP KW_SHORTESTPATH KW_ALLSHORTESTPATHS
 %token KW_IS KW_NULL KW_DEFAULT
 %token KW_SNAPSHOT KW_SNAPSHOTS KW_LOOKUP
-%token KW_JOBS KW_JOB KW_RECOVER KW_FLUSH KW_COMPACT KW_REBUILD KW_SUBMIT KW_STATS KW_STATUS
+%token KW_JOBS KW_JOB KW_RECOVER KW_FLUSH KW_COMPACT KW_RANG_COMPACT KW_REBUILD KW_SUBMIT KW_STATS KW_STATUS
 %token KW_BIDIRECT
 %token KW_USER KW_USERS KW_ACCOUNT
 %token KW_PASSWORD KW_CHANGE KW_ROLE KW_ROLES
@@ -203,7 +203,7 @@ using namespace nebula;
 %token KW_UNWIND KW_SKIP KW_OPTIONAL
 %token KW_CASE KW_THEN KW_ELSE KW_END
 %token KW_GROUP KW_ZONE KW_GROUPS KW_ZONES KW_INTO KW_NEW
-%token KW_LISTENER KW_ELASTICSEARCH KW_KAFKA KW_FULLTEXT KW_HTTPS KW_HTTP
+%token KW_LISTENER KW_ELASTICSEARCH KW_KAFKA KW_NEBULA KW_FULLTEXT KW_HTTPS KW_HTTP
 %token KW_AUTO KW_ES_QUERY KW_ANALYZER
 %token KW_TEXT KW_SEARCH KW_CLIENTS KW_SIGN KW_SERVICE KW_TEXT_SEARCH
 %token KW_ANY KW_SINGLE KW_NONE
@@ -427,7 +427,7 @@ using namespace nebula;
 %left KW_OR KW_XOR
 %left KW_AND
 %right KW_NOT
-%left EQ NE LT LE GT GE REG KW_IN KW_NOT_IN KW_CONTAINS KW_NOT_CONTAINS KW_STARTS_WITH KW_ENDS_WITH KW_NOT_STARTS_WITH KW_NOT_ENDS_WITH KW_IS_NULL KW_IS_NOT_NULL KW_IS_EMPTY KW_IS_NOT_EMPTY
+%left EQ ASSIGN NE LT LE GT GE REG KW_IN KW_NOT_IN KW_CONTAINS KW_NOT_CONTAINS KW_STARTS_WITH KW_ENDS_WITH KW_NOT_STARTS_WITH KW_NOT_ENDS_WITH KW_IS_NULL KW_IS_NOT_NULL KW_IS_EMPTY KW_IS_NOT_EMPTY
 %nonassoc DUMMY_LOWER_THAN_MINUS
 %left PLUS MINUS
 %left STAR DIV MOD
@@ -526,6 +526,7 @@ unreserved_keyword
     | KW_ENDS               { $$ = new std::string("ends"); }
     | KW_VID_TYPE           { $$ = new std::string("vid_type"); }
     | KW_LIMIT              { $$ = new std::string("limit"); }
+    | KW_FLAT_LIMIT         { $$ = new std::string("flat_limit"); }
     | KW_SKIP               { $$ = new std::string("skip"); }
     | KW_OPTIONAL           { $$ = new std::string("optional"); }
     | KW_OFFSET             { $$ = new std::string("offset"); }
@@ -545,9 +546,11 @@ unreserved_keyword
     | KW_LISTENER           { $$ = new std::string("listener"); }
     | KW_ELASTICSEARCH      { $$ = new std::string("elasticsearch"); }
     | KW_KAFKA              { $$ = new std::string("kafka"); }
+    | KW_NEBULA             { $$ = new std::string("nebula"); }
     | KW_FULLTEXT           { $$ = new std::string("fulltext"); }
     | KW_STATS              { $$ = new std::string("stats"); }
     | KW_STATUS             { $$ = new std::string("status"); }
+    | KW_RANG_COMPACT       { $$ = new std::string("rang_compact"); }
     | KW_AUTO               { $$ = new std::string("auto"); }
     | KW_ES_QUERY           { $$ = new std::string("es_query"); }
     | KW_TEXT               { $$ = new std::string("text"); }
@@ -699,6 +702,9 @@ expression_internal
         $$ = UnaryExpression::makeIsNotEmpty(qctx->objPool(), $1);
     }
     | expression_internal EQ expression_internal {
+        $$ = RelationalExpression::makeEQ(qctx->objPool(), $1, $3);
+    }
+    | expression_internal ASSIGN expression_internal {
         $$ = RelationalExpression::makeEQ(qctx->objPool(), $1, $3);
     }
     | expression_internal NE expression_internal {
@@ -1387,6 +1393,9 @@ truncate_clause
     }
     | KW_LIMIT expression {
         $$ = new TruncateClause($2, false);
+    }
+    | KW_FLAT_LIMIT expression {
+        $$ = new TruncateClause($2, false, true);
     }
     ;
 
@@ -3319,6 +3328,12 @@ admin_job_sentence
                                              meta::cpp2::JobType::COMPACT);
         $$ = sentence;
     }
+    | KW_SUBMIT KW_JOB KW_RANG_COMPACT legal_integer {
+        auto sentence = new AdminJobSentence(meta::cpp2::JobOp::ADD,
+                                             meta::cpp2::JobType::COMPACT);
+        sentence->addPara(std::to_string($4));
+        $$ = sentence;
+    }
     | KW_SUBMIT KW_JOB KW_FLUSH {
         auto sentence = new AdminJobSentence(meta::cpp2::JobOp::ADD,
                                              meta::cpp2::JobType::FLUSH);
@@ -3530,10 +3545,10 @@ get_config_item
     ;
 
 set_config_item
-    : config_module_enum COLON name_label ASSIGN expression {
+    : config_module_enum COLON name_label ASSIGN constant_expression {
         $$ = new ConfigRowItem($1, $3, $5);
     }
-    | name_label ASSIGN expression {
+    | name_label ASSIGN constant_expression {
         $$ = new ConfigRowItem(meta::cpp2::ConfigModule::ALL, $1, $3);
     }
     | config_module_enum COLON name_label ASSIGN L_BRACE update_list R_BRACE {
@@ -3860,6 +3875,9 @@ add_listener_sentence
     | KW_ADD KW_LISTENER KW_KAFKA host_list {
         $$ = new AddListenerSentence(meta::cpp2::ListenerType::KAFKA, $4);
     }
+    | KW_ADD KW_LISTENER KW_NEBULA host_list {
+        $$ = new AddListenerSentence(meta::cpp2::ListenerType::NEBULA, $4);
+    }
     ;
 
 remove_listener_sentence
@@ -3868,6 +3886,9 @@ remove_listener_sentence
     }
     | KW_REMOVE KW_LISTENER KW_KAFKA {
         $$ = new RemoveListenerSentence(meta::cpp2::ListenerType::KAFKA);
+    }
+    | KW_REMOVE KW_LISTENER KW_NEBULA {
+        $$ = new RemoveListenerSentence(meta::cpp2::ListenerType::NEBULA);
     }
     ;
 

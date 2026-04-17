@@ -903,6 +903,7 @@ enum ListenerType {
     UNKNOWN       = 0x00,
     ELASTICSEARCH = 0x01,
     KAFKA         = 0x02,
+    NEBULA        = 0x03,
 } (cpp.enum_strict)
 
 struct AddListenerReq {

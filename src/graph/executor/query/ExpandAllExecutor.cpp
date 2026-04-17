@@ -142,6 +142,10 @@ folly::Future<Status> ExpandAllExecutor::getNeighbors() {
   std::vector<Value> vids(nextStepVids_.size());
   std::move(nextStepVids_.begin(), nextStepVids_.end(), vids.begin());
   QueryExpressionContext qec(qctx()->ectx());
+  int64_t limit = expand_->limit(qec);
+  if (expand_->flat()) {
+    limit = stepLimits_[currentStep_ - 2];
+  }
   return storageClient
       ->getNeighbors(param,
                      {nebula::kVid},
@@ -155,7 +159,7 @@ folly::Future<Status> ExpandAllExecutor::getNeighbors() {
                      false,
                      false,
                      std::vector<storage::cpp2::OrderBy>(),
-                     expand_->limit(qec),
+                     limit,
                      expand_->filter(),
                      nullptr)
       .via(runner())
@@ -167,8 +171,10 @@ folly::Future<Status> ExpandAllExecutor::getNeighbors() {
         addStats(resp);
         time::Duration expandTime;
         curLimit_ = 0;
-        curMaxLimit_ = stepLimits_.empty() ? std::numeric_limits<int64_t>::max()
-                                           : stepLimits_[currentStep_ - 2];
+        if (!expand_->flat()) {
+          curMaxLimit_ = stepLimits_.empty() ? std::numeric_limits<int64_t>::max()
+                                             : stepLimits_[currentStep_ - 2];
+        }
         return handleResponse(std::move(resp)).ensure([this, expandTime]() {
           std::string timeName = "graphExpandAllTime+" + folly::to<std::string>(currentStep_);
           addState(timeName, expandTime);

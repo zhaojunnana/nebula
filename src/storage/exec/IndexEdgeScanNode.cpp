@@ -144,7 +144,10 @@ IndexEdgeScanNode::getSchema() {
 }
 
 std::unique_ptr<IndexNode> IndexEdgeScanNode::copy() {
-  return std::make_unique<IndexEdgeScanNode>(*this);
+  std::unordered_map<Value, cpp2::ScanCursor> cursorsCopy(this->cursors_);
+  auto copyNode = std::make_unique<IndexEdgeScanNode>(*this);
+  copyNode->setCursors(this->ctxIdx_, std::move(cursorsCopy));
+  return copyNode;
 }
 
 }  // namespace storage

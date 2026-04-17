@@ -7,6 +7,7 @@
 
 #include "common/base/Status.h"
 #include "common/datatypes/Value.h"
+#include "common/thrift/ThriftTypes.h"
 #include "graph/planner/plan/Query.h"
 #include "graph/util/ExpressionUtils.h"
 #include "graph/util/IndexUtil.h"
@@ -537,6 +538,13 @@ std::vector<IndexItemPtr> OptimizerUtils::allIndexesBySchema(graph::QueryContext
                                                              const IndexScan* node) {
   auto spaceId = node->space();
   auto isEdge = node->isEdge();
+  return allIndexesBySchema(qctx, spaceId, node->schemaId(), isEdge);
+}
+
+std::vector<IndexItemPtr> OptimizerUtils::allIndexesBySchema(graph::QueryContext* qctx,
+                                                             GraphSpaceID spaceId,
+                                                             int32_t targetSchemaId,
+                                                             bool isEdge) {
   auto metaClient = qctx->getMetaClient();
   auto ret = isEdge ? metaClient->getEdgeIndexesFromCache(spaceId)
                     : metaClient->getTagIndexesFromCache(spaceId);
@@ -549,7 +557,7 @@ std::vector<IndexItemPtr> OptimizerUtils::allIndexesBySchema(graph::QueryContext
     const auto& schemaId = index->get_schema_id();
     // TODO (sky) : ignore rebuilding indexes
     auto id = isEdge ? schemaId.get_edge_type() : schemaId.get_tag_id();
-    if (id == node->schemaId()) {
+    if (id == targetSchemaId) {
       indexes.emplace_back(index);
     }
   }
