@@ -109,6 +109,16 @@ static std::unordered_set<std::string> initStreamPatterns() {
     }));
   streamPatterns.insert(buildPatternString({
     PlanNode::Kind::kProject,
+    PlanNode::Kind::kProject,
+    PlanNode::Kind::kLimit,
+    PlanNode::Kind::kAppendVertices,
+    PlanNode::Kind::kTraverse,
+    PlanNode::Kind::kTraverse,
+    PlanNode::Kind::kIndexScan,
+    PlanNode::Kind::kStart
+    }));
+  streamPatterns.insert(buildPatternString({
+    PlanNode::Kind::kProject,
     PlanNode::Kind::kLimit,
     PlanNode::Kind::kFilter,
     PlanNode::Kind::kAppendVertices,
